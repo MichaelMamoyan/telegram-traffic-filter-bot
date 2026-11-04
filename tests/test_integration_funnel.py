@@ -443,3 +443,57 @@ async def test_funnel_numbers_never_contradict_each_other(env) -> None:
         assert all(0 <= rate <= 100 for rate in (
             totals.pass_rate, totals.conv_rate, totals.conv_of_passed
         ))
+
+
+@pytest_asyncio.fixture
+async def strict_env(env):
+    """То же окружение, но с выключенным автосозданием ссылок."""
+    dp, bot, mock, sessionmaker = env
+    dp.workflow_data["settings"].auto_create_unknown_links = False
+    yield dp, bot, mock, sessionmaker
+
+
+async def test_unknown_payload_does_not_create_link_when_disabled(strict_env) -> None:
+    """Неизвестный код не должен плодить строку в отчёте.
+
+    Ссылки выдаёт админ: иначе опечатка в креативе («O1» вместо «01») создаёт
+    вторую «ссылку-призрак», и трафик байера размазывается по двум строкам.
+    """
+    dp, bot, mock, sessionmaker = strict_env
+    await _send(dp, bot, 2000, "/start vasya_tiktok_O1", 1)
+
+    async with sessionmaker() as session:
+        links = await LinkRepo(session).list_all()
+        assert [link.code for link in links] == ["vasya_tiktok_01"], "новых ссылок быть не должно"
+
+        user = await UserRepo(session).get(2000)
+        assert user is not None, "юзер всё равно регистрируется"
+        assert user.ref_link_id is None
+        # Код перехода сохранён — видно, откуда пришёл, даже без ссылки.
+        assert user.ref_payload == "vasya_tiktok_O1"
+
+        organic = await StatsRepo(session).organic_funnel()
+        assert organic.starts == 1
+
+
+async def test_known_payload_still_works_when_disabled(strict_env) -> None:
+    """Существующие ссылки продолжают работать как обычно."""
+    dp, bot, mock, sessionmaker = strict_env
+    await _send(dp, bot, 2100, "/start vasya_tiktok_01", 1)
+
+    async with sessionmaker() as session:
+        user = await UserRepo(session).get(2100)
+        assert user.ref_link.code == "vasya_tiktok_01"
+        assert (await StatsRepo(session).organic_funnel()).starts == 0
+
+
+async def test_unknown_payload_reaches_export_as_raw_code(strict_env) -> None:
+    """В выгрузке вместо названия ссылки виден сам код — данные не теряются."""
+    from app.services.rows import user_row
+
+    dp, bot, mock, sessionmaker = strict_env
+    await _send(dp, bot, 2200, "/start petya_fb_07", 1)
+
+    async with sessionmaker() as session:
+        user = await UserRepo(session).get(2200)
+        assert user_row(user)[5] == "petya_fb_07"
