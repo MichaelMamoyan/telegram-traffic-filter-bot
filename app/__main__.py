@@ -9,7 +9,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.types import BotCommand, BotCommandScopeChat
 
 from app.config import Settings, get_settings
 from app.db.base import make_engine, make_sessionmaker
@@ -17,6 +16,7 @@ from app.db.init import create_schema, seed_channels
 from app.handlers import register_routers
 from app.middlewares import DbSessionMiddleware
 from app.services.broadcast import BroadcastService
+from app.services.commands import setup_commands
 from app.services.sheets import SheetsSyncer
 
 log = logging.getLogger("bot")
@@ -41,27 +41,6 @@ async def make_storage(settings: Settings):  # type: ignore[no-untyped-def]
     except Exception as exc:
         log.warning("Redis недоступен (%s) — FSM в памяти процесса", exc)
         return MemoryStorage()
-
-
-async def set_commands(bot: Bot, settings: Settings) -> None:
-    await bot.set_my_commands(
-        [
-            BotCommand(command="start", description="Начать"),
-            BotCommand(command="reset", description="Пройти опрос заново"),
-        ]
-    )
-    admin_commands = [
-        BotCommand(command="admin", description="Админ-панель"),
-        BotCommand(command="stats", description="Статистика"),
-        BotCommand(command="cancel", description="Сбросить текущее действие"),
-    ]
-    for admin_id in settings.admin_ids:
-        try:
-            await bot.set_my_commands(
-                admin_commands, scope=BotCommandScopeChat(chat_id=admin_id)
-            )
-        except Exception as exc:
-            log.warning("Не удалось задать команды админу %s: %s", admin_id, exc)
 
 
 async def main() -> None:
@@ -97,7 +76,7 @@ async def main() -> None:
     if not settings.admin_ids:
         log.warning("ADMIN_IDS пуст — админка будет недоступна")
 
-    await set_commands(bot, settings)
+    await setup_commands(bot, settings, sessionmaker)
     sheets.start()
     resumed = await broadcasts.resume_unfinished()
     if resumed:

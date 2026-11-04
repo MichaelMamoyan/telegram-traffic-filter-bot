@@ -18,6 +18,7 @@ from app.keyboards.admin import (
     links_kb,
 )
 from app.keyboards.callbacks import BuyerCB, LinkCB
+from app.services.commands import apply_buyer_commands
 from app.states import NewBuyer, NewLink
 from app.utils.ui import safe_edit
 
@@ -218,6 +219,10 @@ async def on_buyer_name(message: Message, session: AsyncSession, state: FSMConte
         return
     buyer = await buyers.create(name=name[:64], tg_id=tg_id)
     await state.clear()
+    if buyer.tg_id and message.bot:
+        # Чтобы /stats и /mylinks появились у него в меню сразу, а не после
+        # перезапуска бота.
+        await apply_buyer_commands(message.bot, buyer.tg_id)
     text, markup = await render_buyers(session)
     await message.answer(
         f"✅ Байер <b>{texts.esc(buyer.name)}</b> добавлен"
