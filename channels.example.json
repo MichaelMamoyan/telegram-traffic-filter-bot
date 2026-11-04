@@ -1,0 +1,26 @@
+[
+  {
+    "chat_id": -1001111111111,
+    "title": "Derek (основной оффер)",
+    "segments": ["male_adult"],
+    "allow_minors": false,
+    "weight": 1,
+    "priority": 10,
+    "offer_text": "✅ Готово!\n\nВаш канал: <b>{channel}</b>\nЖмите кнопку и подтвердите вступление.",
+    "button_text": "🚀 Забрать доступ"
+  },
+  {
+    "chat_id": -1002222222222,
+    "title": "Женский оффер",
+    "segments": ["female_adult"],
+    "allow_minors": false,
+    "priority": 10
+  },
+  {
+    "chat_id": -1003333333333,
+    "title": "Junior / развлекательный",
+    "segments": ["male_minor", "female_minor"],
+    "allow_minors": true,
+    "priority": 20
+  }
+]

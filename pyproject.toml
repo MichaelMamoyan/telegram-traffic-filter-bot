@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "ASYNC"]
+ignore = [
+    "RUF001",  # кириллица в строках — у нас весь UI на русском
+    "RUF002",
+    "RUF003",
+    "B008",    # Depends-подобные дефолты не используем
+]
+
+[tool.ruff.lint.per-file-ignores]
+# ASYNC109: тестовые дубли повторяют сигнатуры aiogram, где timeout обязателен
+"tests/*" = ["E501", "ASYNC109"]

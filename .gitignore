@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+secrets/*.json
+*.sqlite3
+*.db
+.pytest_cache/
+.ruff_cache/
+*.xlsx
+.DS_Store
