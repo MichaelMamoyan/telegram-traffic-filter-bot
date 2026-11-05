@@ -57,6 +57,8 @@
 
 ## Быстрый старт
 
+Развёртывание на сервере — отдельной инструкцией: [DEPLOY.md](DEPLOY.md).
+
 ```bash
 git clone <repo> && cd tg-filter-bot
 cp .env.example .env
