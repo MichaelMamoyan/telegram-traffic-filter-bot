@@ -52,7 +52,11 @@ async def main() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
 
-    engine = make_engine(settings.db_dsn)
+    engine = make_engine(
+        settings.db_dsn,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
     sessionmaker = make_sessionmaker(engine)
     await create_schema(engine)
     if settings.seed_channels_file:

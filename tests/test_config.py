@@ -131,3 +131,19 @@ def test_empty_redis_dsn_is_allowed() -> None:
     """Redis необязателен: он держит только состояние форм в админке."""
     settings = _settings(redis_dsn="")
     assert settings.redis_dsn == ""
+
+
+def test_connection_pool_defaults_fit_small_plans() -> None:
+    """На тарифе с 512 МБ десятки соединений съели бы всю память базы."""
+    settings = _settings()
+    assert settings.db_pool_size == 5
+    assert settings.db_max_overflow == 10
+    assert settings.db_pool_size + settings.db_max_overflow <= 20
+
+
+def test_pool_size_is_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_TOKEN", "123:TEST")
+    monkeypatch.setenv("DB_POOL_SIZE", "20")
+    monkeypatch.setenv("DB_MAX_OVERFLOW", "40")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert (settings.db_pool_size, settings.db_max_overflow) == (20, 40)

@@ -63,6 +63,11 @@ class Settings(BaseSettings):
 
     # --- Инфраструктура ---
     db_dsn: str = "postgresql+asyncpg://bot:bot@localhost:5432/filterbot"
+    # Каждое соединение Postgres — это отдельный процесс на 5-10 МБ.
+    # На тарифе с 512 МБ три десятка соединений съедят память целиком,
+    # поэтому держим пул небольшим: боту с polling больше и не нужно.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
     redis_dsn: str = "redis://localhost:6379/0"
 
     # --- Логика воронки ---

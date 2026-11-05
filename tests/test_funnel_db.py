@@ -342,3 +342,21 @@ async def test_organic_row_is_empty_when_all_traffic_has_links(session) -> None:
     await session.commit()
     organic = await StatsRepo(session).organic_funnel()
     assert organic.starts == 0  # строку в отчёт не добавляем
+
+
+def test_engine_recycles_postgres_connections() -> None:
+    """Управляемые базы рвут простаивающие соединения — нужен pool_recycle."""
+    from app.db.base import make_engine
+
+    engine = make_engine("postgresql+asyncpg://u:p@h:5432/db", pool_size=3, max_overflow=7)
+    assert engine.pool.size() == 3
+    assert engine.pool._max_overflow == 7
+    assert engine.pool._recycle == 1800
+
+
+def test_sqlite_engine_ignores_pool_settings() -> None:
+    """У SQLite своя схема пула, параметры Postgres ей передавать нельзя."""
+    from app.db.base import make_engine
+
+    engine = make_engine("sqlite+aiosqlite:///:memory:")
+    assert engine is not None

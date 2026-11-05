@@ -27,10 +27,18 @@ class TimestampMixin:
     )
 
 
-def make_engine(dsn: str, echo: bool = False) -> AsyncEngine:
+def make_engine(
+    dsn: str, echo: bool = False, pool_size: int = 5, max_overflow: int = 10
+) -> AsyncEngine:
     kwargs: dict[str, Any] = {"echo": echo, "pool_pre_ping": True}
     if dsn.startswith("postgresql"):
-        kwargs |= {"pool_size": 10, "max_overflow": 20}
+        # pool_recycle: управляемые базы закрывают простаивающие соединения,
+        # и без переподключения бот ловит "connection was closed".
+        kwargs |= {
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
+            "pool_recycle": 1800,
+        }
     return create_async_engine(dsn, **kwargs)
 
 
