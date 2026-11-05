@@ -1,0 +1,34 @@
+# Конфигурация развёртывания на Amvera Cloud.
+# Локально и на обычном сервере проект поднимается через docker-compose,
+# этот файл нужен только PaaS — см. DEPLOY.md.
+
+meta:
+  environment: docker
+  toolchain:
+    name: docker
+
+build:
+  dockerfile: Dockerfile
+  skip: false
+
+run:
+  # Пусто: образ собирается из Dockerfile, команда запуска задана в нём
+  # (alembic upgrade head && python -m app).
+  image: null
+  command: null
+  args: null
+
+  # Бот ничего не пишет на диск: вся работа идёт в PostgreSQL.
+  persistenceMount: /data
+
+  # Бот не слушает порт — он сам ходит к Telegram через polling.
+  # Значение оставлено дефолтным, потому что для входящих запросов не нужно.
+  containerPort: "80"
+
+  # ВАЖНО, не менять обоим параметрам значения:
+  # Telegram не допускает двух процессов, читающих обновления одного бота.
+  # singleton=false поднял бы несколько экземпляров, а zeroDowntime=true
+  # на время деплоя оставил бы старый контейнер рядом с новым — в обоих
+  # случаях бот падает с "Conflict: terminated by other getUpdates request".
+  singleton: true
+  zeroDowntime: false
