@@ -257,7 +257,6 @@ async def test_second_start_after_filter_resends_same_offer(env) -> None:
 
     last = mock.called("SendMessage")[-1]
     assert "Derek" in last.text
-    assert "/reset" in last.text
 
     async with sessionmaker() as session:
         rows = await StatsRepo(session).link_funnel()
@@ -267,7 +266,7 @@ async def test_second_start_after_filter_resends_same_offer(env) -> None:
 
 async def test_reset_lets_user_pass_filter_again(env) -> None:
     dp, bot, mock, sessionmaker = env
-    tg_id = 700
+    tg_id = ADMIN_ID  # /reset доступен только админам
 
     await _send(dp, bot, tg_id, "/start vasya_tiktok_01", 1)
     await _click(dp, bot, tg_id, "age:1", 2)
@@ -362,7 +361,7 @@ async def test_reset_is_recorded_in_event_log(env) -> None:
     from app.enums import EventType
 
     dp, bot, mock, sessionmaker = env
-    tg_id = 1200
+    tg_id = ADMIN_ID
 
     await _send(dp, bot, tg_id, "/start vasya_tiktok_01", 1)
     await _click(dp, bot, tg_id, "age:1", 2)
@@ -388,7 +387,7 @@ async def test_reset_is_recorded_in_event_log(env) -> None:
 async def test_reset_keeps_attribution_and_conversion(env) -> None:
     """Сброс ответов не должен обнулять уже учтённую подписку байера."""
     dp, bot, mock, sessionmaker = env
-    tg_id = 1300
+    tg_id = ADMIN_ID
 
     await _send(dp, bot, tg_id, "/start vasya_tiktok_01", 1)
     await _click(dp, bot, tg_id, "age:1", 2)
@@ -416,16 +415,16 @@ async def test_funnel_numbers_never_contradict_each_other(env) -> None:
     """
     dp, bot, mock, sessionmaker = env
 
-    # Юзер 1: прошёл и подписался, потом сбросил ответы и прошёл заново.
-    await _send(dp, bot, 1400, "/start vasya_tiktok_01", 1)
-    await _click(dp, bot, 1400, "age:1", 2)
-    await _click(dp, bot, 1400, "gender:1", 3)
-    await _join(dp, bot, 1400, -1001, 4)
-    await _send(dp, bot, 1400, "/reset", 5)
-    await _send(dp, bot, 1400, "/start vasya_tiktok_01", 6)
-    await _click(dp, bot, 1400, "age:0", 7)
-    await _click(dp, bot, 1400, "gender:0", 8)
-    await _join(dp, bot, 1400, -1003, 9)
+    # Админ: прошёл и подписался, потом сбросил ответы и прошёл заново.
+    await _send(dp, bot, ADMIN_ID, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, ADMIN_ID, "age:1", 2)
+    await _click(dp, bot, ADMIN_ID, "gender:1", 3)
+    await _join(dp, bot, ADMIN_ID, -1001, 4)
+    await _send(dp, bot, ADMIN_ID, "/reset", 5)
+    await _send(dp, bot, ADMIN_ID, "/start vasya_tiktok_01", 6)
+    await _click(dp, bot, ADMIN_ID, "age:0", 7)
+    await _click(dp, bot, ADMIN_ID, "gender:0", 8)
+    await _join(dp, bot, ADMIN_ID, -1003, 9)
     # Юзер 2: только нажал Start.
     await _send(dp, bot, 1401, "/start vasya_tiktok_01", 10)
     # Юзер 3: бросил на вопросе о поле.
@@ -497,3 +496,71 @@ async def test_unknown_payload_reaches_export_as_raw_code(strict_env) -> None:
     async with sessionmaker() as session:
         user = await UserRepo(session).get(2200)
         assert user_row(user)[5] == "petya_fb_07"
+
+
+async def test_reset_is_ignored_for_regular_users(env) -> None:
+    """Рядовой юзер не может перевыбрать ответы и получить другой оффер."""
+    dp, bot, mock, sessionmaker = env
+    tg_id = 3000  # не админ
+
+    await _send(dp, bot, tg_id, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, tg_id, "age:1", 2)
+    await _click(dp, bot, tg_id, "gender:1", 3)
+    await _send(dp, bot, tg_id, "/reset", 4)
+
+    async with sessionmaker() as session:
+        user = await UserRepo(session).get(tg_id)
+        assert user.segment == Segment.MALE_ADULT.value, "ответы должны остаться"
+        assert user.assigned_channel_id is not None
+
+    # Повторный /start показывает тот же канал, а не опрос заново.
+    await _send(dp, bot, tg_id, "/start vasya_tiktok_01", 5)
+    assert "Derek" in mock.called("SendMessage")[-1].text
+
+
+async def test_reset_still_works_for_admin(env) -> None:
+    dp, bot, mock, sessionmaker = env
+
+    await _send(dp, bot, ADMIN_ID, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, ADMIN_ID, "age:1", 2)
+    await _click(dp, bot, ADMIN_ID, "gender:1", 3)
+    await _send(dp, bot, ADMIN_ID, "/reset", 4)
+
+    async with sessionmaker() as session:
+        assert (await UserRepo(session).get(ADMIN_ID)).segment is None
+
+
+async def test_regular_user_is_not_told_about_reset(env) -> None:
+    """Подсказку про /reset видит только тот, кому команда доступна."""
+    dp, bot, mock, sessionmaker = env
+
+    await _send(dp, bot, 3100, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 3100, "age:1", 2)
+    await _click(dp, bot, 3100, "gender:1", 3)
+    await _send(dp, bot, 3100, "/start vasya_tiktok_01", 4)
+    assert "/reset" not in mock.called("SendMessage")[-1].text
+
+    await _send(dp, bot, ADMIN_ID, "/start vasya_tiktok_01", 5)
+    await _click(dp, bot, ADMIN_ID, "age:1", 6)
+    await _click(dp, bot, ADMIN_ID, "gender:1", 7)
+    await _send(dp, bot, ADMIN_ID, "/start vasya_tiktok_01", 8)
+    assert "/reset" in mock.called("SendMessage")[-1].text
+
+
+async def test_admin_gets_his_menu_on_first_start(env) -> None:
+    """Новый админ должен увидеть /admin сразу, а не после перезапуска бота."""
+    from aiogram.types import BotCommandScopeChat
+
+    dp, bot, mock, sessionmaker = env
+    await _send(dp, bot, ADMIN_ID, "/start", 1)
+
+    scoped = [
+        call for call in mock.called("SetMyCommands")
+        if isinstance(call.scope, BotCommandScopeChat) and call.scope.chat_id == ADMIN_ID
+    ]
+    assert scoped, "команды админу не проставились"
+    assert "admin" in [c.command for c in scoped[-1].commands]
+
+    mock.calls.clear()
+    await _send(dp, bot, 3200, "/start", 2)  # обычный юзер
+    assert not mock.called("SetMyCommands"), "рядовому юзеру команды слать незачем"

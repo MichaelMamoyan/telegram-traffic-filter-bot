@@ -14,8 +14,10 @@ from app.config import Settings
 from app.db.models import User
 from app.db.repo import ChannelRepo, LinkRepo, OfferRepo, UserRepo, log_event
 from app.enums import AgeStatus, EventType, Gender, Segment, resolve_segment
+from app.filters import IsAdmin
 from app.keyboards.callbacks import AgeCB, GenderCB
 from app.keyboards.funnel import age_kb, gender_kb, offer_kb
+from app.services.commands import apply_admin_commands
 from app.services.invites import InviteService
 from app.services.routing import pick_channel
 from app.utils.parsing import parse_start_payload
@@ -61,6 +63,12 @@ async def cmd_start(
         {"payload": payload, "new_user": is_new},
     )
 
+    if settings.is_admin(user.tg_id):
+        # До первого /start у Telegram нет чата с этим человеком, и команды
+        # для него задать нельзя. Проставляем здесь, иначе админ увидит
+        # /admin в меню только после перезапуска бота.
+        await apply_admin_commands(bot, user.tg_id)
+
     # Юзер уже прошёл фильтр — не гоняем по опросу второй раз, показываем его оффер.
     if user.segment and user.assigned_channel_id and await _resend_offer(
         message, user, session, bot, settings
@@ -71,7 +79,9 @@ async def cmd_start(
     await message.answer(texts.ASK_AGE, reply_markup=age_kb())
 
 
-@router.message(Command("reset"))
+# Только админам: иначе юзер может перевыбрать ответы и получить другой
+# оффер, и трафик начнёт перетекать между каналами мимо сегментации.
+@router.message(Command("reset"), IsAdmin())
 async def cmd_reset(message: Message, session: AsyncSession, state: FSMContext) -> None:
     if message.from_user is None:
         return
@@ -216,11 +226,9 @@ async def _resend_offer(
     if url is None:
         return False
 
-    text = (
-        texts.ALREADY_DONE.format(channel=texts.esc(channel.title))
-        + "\n\n"
-        + texts.RESTART_HINT
-    )
+    text = texts.ALREADY_DONE.format(channel=texts.esc(channel.title))
+    if settings.is_admin(user.tg_id):
+        text += "\n\n" + texts.RESTART_HINT
     await message.answer(text, reply_markup=offer_kb(url, channel.button_text))
     return True
 

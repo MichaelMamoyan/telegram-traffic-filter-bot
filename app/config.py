@@ -2,9 +2,54 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+
+def parse_id_list(value: object) -> list[int]:
+    """Принимает `123`, `123,456`, `123;456`, `[123, 456]`."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, int):
+        return [value]
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.startswith("["):  # допускаем и JSON-массив: ADMIN_IDS=[1, 2]
+            raw = raw[1:-1]
+        return [int(chunk.strip()) for chunk in raw.replace(";", ",").split(",") if chunk.strip()]
+    return [int(item) for item in value]  # type: ignore[union-attr]
+
+
+class _CsvMixin:
+    """Читает списки как «1,2,3», не как JSON.
+
+    pydantic-settings для полей-списков сначала пробует json.loads и падает с
+    SettingsError ДО валидаторов. Поэтому `ADMIN_IDS=1` работал (валидный JSON),
+    а `ADMIN_IDS=1,2` ронял запуск.
+    """
+
+    CSV_FIELDS: ClassVar[set[str]] = {"admin_ids"}
+
+    def prepare_field_value(self, field_name, field, value, value_is_complex):  # type: ignore[no-untyped-def]
+        if field_name in self.CSV_FIELDS and isinstance(value, str):
+            return parse_id_list(value)
+        return super().prepare_field_value(field_name, field, value, value_is_complex)  # type: ignore[misc]
+
+
+class _CsvEnvSource(_CsvMixin, EnvSettingsSource):
+    """Переменные окружения (так приходит конфиг в Docker)."""
+
+
+class _CsvDotEnvSource(_CsvMixin, DotEnvSettingsSource):
+    """Файл .env (так приходит конфиг при локальном запуске)."""
 
 
 class Settings(BaseSettings):
@@ -53,25 +98,41 @@ class Settings(BaseSettings):
     tz_name: str = "Europe/Moscow"
     support_url: str = ""
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        # Параметры копируем с исходных источников, иначе переданный в
+        # конструктор _env_file игнорируется и настройки всегда читаются
+        # из реального .env — что ломает изоляцию в тестах.
+        return (
+            init_settings,
+            _CsvEnvSource(
+                settings_cls,
+                case_sensitive=env_settings.case_sensitive,  # type: ignore[attr-defined]
+                env_prefix=env_settings.env_prefix,  # type: ignore[attr-defined]
+                env_nested_delimiter=env_settings.env_nested_delimiter,  # type: ignore[attr-defined]
+            ),
+            _CsvDotEnvSource(
+                settings_cls,
+                env_file=dotenv_settings.env_file,  # type: ignore[attr-defined]
+                env_file_encoding=dotenv_settings.env_file_encoding,  # type: ignore[attr-defined]
+                case_sensitive=dotenv_settings.case_sensitive,  # type: ignore[attr-defined]
+                env_prefix=dotenv_settings.env_prefix,  # type: ignore[attr-defined]
+                env_nested_delimiter=dotenv_settings.env_nested_delimiter,  # type: ignore[attr-defined]
+            ),
+            file_secret_settings,
+        )
+
     @field_validator("admin_ids", mode="before")
     @classmethod
     def _parse_admin_ids(cls, value: object) -> object:
-        """Принимаем и `123`, и `123,456`, и `[123, 456]`.
-
-        pydantic-settings сначала пробует json.loads, поэтому единственный ID
-        из .env приходит сюда уже целым числом, а не строкой.
-        """
-        if value is None or value == "":
-            return []
-        if isinstance(value, int):
-            return [value]
-        if isinstance(value, str):
-            return [
-                int(chunk.strip())
-                for chunk in value.replace(";", ",").split(",")
-                if chunk.strip()
-            ]
-        return value
+        return parse_id_list(value)
 
     @field_validator("seed_channels_file", mode="before")
     @classmethod

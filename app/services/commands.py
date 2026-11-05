@@ -19,7 +19,6 @@ log = logging.getLogger(__name__)
 
 USER_COMMANDS = [
     BotCommand(command="start", description="Начать"),
-    BotCommand(command="reset", description="Пройти опрос заново"),
 ]
 
 BUYER_COMMANDS = [
@@ -31,6 +30,7 @@ BUYER_COMMANDS = [
 
 ADMIN_COMMANDS = [
     *USER_COMMANDS,
+    BotCommand(command="reset", description="Пройти опрос заново"),
     BotCommand(command="admin", description="Админ-панель"),
     BotCommand(command="stats", description="Статистика"),
     BotCommand(command="cancel", description="Отменить текущее действие"),
@@ -50,6 +50,10 @@ async def _apply(bot: Bot, commands: list[BotCommand], chat_id: int, who: str) -
 
 async def apply_buyer_commands(bot: Bot, tg_id: int) -> bool:
     return await _apply(bot, BUYER_COMMANDS, tg_id, "байер")
+
+
+async def apply_admin_commands(bot: Bot, tg_id: int) -> bool:
+    return await _apply(bot, ADMIN_COMMANDS, tg_id, "админ")
 
 
 async def setup_commands(

@@ -67,3 +67,61 @@ async def test_seed_channels_skips_directory(tmp_path) -> None:
 
     assert await seed_channels(None, Path(".")) == 0
     assert await seed_channels(None, tmp_path / "нет-такого.json") == 0
+
+
+# --------------------------------------------------------------- чтение из окружения
+# Предыдущая версия этих проверок передавала значение прямо в конструктор и
+# миновала источники pydantic-settings. Из-за этого не заметили, что
+# ADMIN_IDS=1,2 роняет запуск: список сначала пробуют разобрать как JSON,
+# и SettingsError летит ДО валидаторов. С одним ID работало — это валидный JSON.
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("6336322208", [6336322208]),
+        ("6336322208,8589144095", [6336322208, 8589144095]),
+        ("1, 2 , 3", [1, 2, 3]),
+        ("1;2", [1, 2]),
+        ("[1, 2]", [1, 2]),
+        ("", []),
+    ],
+)
+def test_admin_ids_from_environment(monkeypatch, raw, expected) -> None:
+    """Так конфиг приходит в Docker — через переменные окружения."""
+    monkeypatch.setenv("BOT_TOKEN", "123:TEST")
+    monkeypatch.setenv("ADMIN_IDS", raw)
+    assert Settings(_env_file=None).admin_ids == expected  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("6336322208", [6336322208]),
+        ("6336322208,8589144095", [6336322208, 8589144095]),
+        ("1;2;3", [1, 2, 3]),
+    ],
+)
+def test_admin_ids_from_dotenv_file(monkeypatch, tmp_path, raw, expected) -> None:
+    """А так — при локальном запуске, из файла .env."""
+    monkeypatch.delenv("ADMIN_IDS", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"BOT_TOKEN=123:TEST\nADMIN_IDS={raw}\n", encoding="utf-8")
+    assert Settings(_env_file=env_file).admin_ids == expected  # type: ignore[call-arg]
+
+
+def test_several_admins_all_pass_the_check(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_TOKEN", "123:TEST")
+    monkeypatch.setenv("ADMIN_IDS", "6336322208,8589144095")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.is_admin(6336322208)
+    assert settings.is_admin(8589144095)
+    assert not settings.is_admin(999)
+
+
+def test_broken_admin_ids_fail_loudly(monkeypatch) -> None:
+    """Опечатка в .env должна падать на старте, а не тихо обнулять админов."""
+    monkeypatch.setenv("BOT_TOKEN", "123:TEST")
+    monkeypatch.setenv("ADMIN_IDS", "123,не-число")
+    with pytest.raises((ValidationError, ValueError)):
+        Settings(_env_file=None)  # type: ignore[call-arg]

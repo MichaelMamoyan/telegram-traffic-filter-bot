@@ -29,11 +29,18 @@ def _names(commands) -> list[str]:  # type: ignore[no-untyped-def]
 
 
 def test_base_commands_are_present_in_every_scope() -> None:
-    """Никто не должен терять /start и /reset из-за своей роли."""
+    """Никто не должен терять /start из-за своей роли."""
     base = set(_names(USER_COMMANDS))
-    assert base == {"start", "reset"}
+    assert base == {"start"}
     assert base <= set(_names(BUYER_COMMANDS)), "байер потерял базовые команды"
     assert base <= set(_names(ADMIN_COMMANDS)), "админ потерял базовые команды"
+
+
+def test_reset_is_offered_to_admins_only() -> None:
+    """Юзер не должен перевыбирать ответы: иначе трафик перетекает между офферами."""
+    assert "reset" not in set(_names(USER_COMMANDS))
+    assert "reset" not in set(_names(BUYER_COMMANDS))
+    assert "reset" in set(_names(ADMIN_COMMANDS))
 
 
 def test_role_commands_do_not_leak_to_everyone() -> None:
