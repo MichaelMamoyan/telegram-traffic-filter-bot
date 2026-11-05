@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot, Router
+from aiogram.enums import ChatMemberStatus
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -53,7 +54,27 @@ async def render_channels(session: AsyncSession) -> tuple[str, InlineKeyboardMar
     return "\n".join(text), channels_kb(channels)
 
 
-def _card(channel: Channel) -> tuple[str, InlineKeyboardMarkup]:
+async def check_rights(bot: Bot, chat_id: int) -> str:
+    """Спрашиваем у Telegram, что бот реально может в этом канале.
+
+    Без этого нехватка права «Добавление подписчиков» всплывает только когда
+    живой юзер дошёл до конца воронки и увидел заглушку вместо канала.
+    """
+    try:
+        me = await bot.me()
+        member = await bot.get_chat_member(chat_id=chat_id, user_id=me.id)
+    except TelegramAPIError as exc:
+        log.warning("Не удалось проверить права в %s: %s", chat_id, exc)
+        return texts.CHANNEL_RIGHTS_UNKNOWN
+
+    if member.status != ChatMemberStatus.ADMINISTRATOR:
+        return texts.CHANNEL_RIGHTS_NOT_ADMIN
+    if not getattr(member, "can_invite_users", False):
+        return texts.CHANNEL_RIGHTS_NO_INVITE
+    return texts.CHANNEL_RIGHTS_OK
+
+
+async def _card(bot: Bot, channel: Channel) -> tuple[str, InlineKeyboardMarkup]:
     return (
         texts.channel_card(
             title=channel.title,
@@ -63,6 +84,7 @@ def _card(channel: Channel) -> tuple[str, InlineKeyboardMarkup]:
             is_active=channel.is_active,
             weight=channel.weight,
             has_invite=bool(channel.invite_link),
+            rights=await check_rights(bot, channel.chat_id),
         ),
         channel_card_kb(channel),
     )
@@ -143,7 +165,7 @@ async def on_channel(
         await callback.answer("Канал удалён")
         return
 
-    text, markup = _card(channel)
+    text, markup = await _card(bot, channel)
     await safe_edit(callback, text, markup)
     await callback.answer()
 
@@ -187,5 +209,5 @@ async def on_channel_source(
         username=chat.username,
     )
     await state.clear()
-    text, markup = _card(channel)
+    text, markup = await _card(bot, channel)
     await message.answer("✅ Канал добавлен. Выберите сегменты:\n\n" + text, reply_markup=markup)

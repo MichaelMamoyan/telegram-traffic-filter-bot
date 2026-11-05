@@ -11,6 +11,13 @@ from app.keyboards.callbacks import ExportCB
 from app.services.export import build_xlsx
 from app.services.sheets import SheetsSyncer
 
+
+def _now(tz: str) -> str:
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime.now(ZoneInfo(tz)).strftime("%d.%m.%Y %H:%M")
+
 router = Router(name="admin_export")
 router.callback_query.filter(IsAdmin())
 
@@ -35,7 +42,9 @@ async def on_export(
         await bot.send_document(
             chat_id,
             BufferedInputFile(data, filename=name),
-            caption="📄 Выгрузка базы: сводка + аудитории по листам",
+            caption="📄 Выгрузка базы на "
+            + _now(settings.tz_name)
+            + "\nЛисты: сводка и аудитории отдельно.",
             reply_markup=export_kb(settings.sheets_enabled),
         )
         return

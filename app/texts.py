@@ -121,6 +121,14 @@ def link_card(code: str, title: str, bot_username: str, row: FunnelRow | None = 
     return "\n".join(text)
 
 
+CHANNEL_RIGHTS_OK = "✅ бот админ, может выдавать инвайты"
+CHANNEL_RIGHTS_NO_INVITE = (
+    "⚠️ нет права «Добавление подписчиков» — инвайты не выдать, подписки не посчитать"
+)
+CHANNEL_RIGHTS_NOT_ADMIN = "⛔️ бот не администратор канала"
+CHANNEL_RIGHTS_UNKNOWN = "❔ не удалось проверить (канал удалён или бота выгнали)"
+
+
 def channel_card(
     title: str,
     chat_id: int,
@@ -129,6 +137,7 @@ def channel_card(
     is_active: bool,
     weight: float,
     has_invite: bool,
+    rights: str = CHANNEL_RIGHTS_UNKNOWN,
 ) -> str:
     names = ", ".join(SEGMENT_TITLES[Segment(s)] for s in segments) or "— не выбраны —"
     return (
@@ -137,9 +146,37 @@ def channel_card(
         f"Сегменты: {names}\n"
         f"18+ контент: {'нет (можно до 18)' if allow_minors else 'да (младше 18 отсеиваются)'}\n"
         f"Вес в ротации: {weight:g}\n"
-        f"Инвайт-ссылка: {'есть' if has_invite else 'будет создана при первой выдаче'}\n"
+        f"Права бота: {rights}\n"
         f"Статус: {'🟢 активен' if is_active else '🔴 выключен'}"
     )
+
+
+def export_screen(spreadsheet_id: str, interval: int) -> str:
+    """Экран экспорта должен сам отвечать на вопрос «а куда оно уходит»."""
+    parts = [
+        "📤 <b>Экспорт базы</b>",
+        "",
+        "<b>📄 XLSX</b> — пришлю файлом сюда, в этот чат.",
+        "Листы: Сводка, Парни 18+, Девушки 18+, Младше 18, Без фильтра.",
+        "",
+    ]
+    if spreadsheet_id:
+        url = f"https://docs.google.com/spreadsheets/d/{esc(spreadsheet_id)}"
+        parts += [
+            "<b>🔄 Google Sheets</b> — пишу в подключённую таблицу:",
+            f"{url}",
+            "",
+            f"Синхронизация идёт сама каждые {interval} сек — кнопка нужна, "
+            "только чтобы не ждать.",
+            "«Перезалить целиком» очищает листы и раскладывает базу заново.",
+        ]
+    else:
+        parts += [
+            "<b>🔄 Google Sheets</b> — не подключён.",
+            "Нужны GOOGLE_SPREADSHEET_ID и ключ сервисного аккаунта в secrets/.",
+            "Без них бот работает как обычно, выгрузка идёт только в XLSX.",
+        ]
+    return "\n".join(parts)
 
 
 BROADCAST_FILTER_TITLES = {

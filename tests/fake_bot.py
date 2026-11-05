@@ -11,7 +11,13 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.base import BaseSession
 from aiogram.enums import ParseMode
 from aiogram.methods import TelegramMethod
-from aiogram.types import Chat, ChatInviteLink, Message, MessageId
+from aiogram.types import (
+    Chat,
+    ChatInviteLink,
+    ChatMemberAdministrator,
+    Message,
+    MessageId,
+)
 from aiogram.types import User as TgUser
 from html_check import assert_telegram_html
 
@@ -65,6 +71,22 @@ class FakeSession(BaseSession):
                 chat=Chat(id=int(chat_id), type="private"),
                 from_user=BOT_USER,
                 text=getattr(method, "text", None) or getattr(method, "caption", None),
+            )
+        if name == "GetChatMember":
+            return ChatMemberAdministrator(
+                user=BOT_USER,
+                can_be_edited=False,
+                is_anonymous=False,
+                can_manage_chat=True,
+                can_delete_messages=True,
+                can_manage_video_chats=False,
+                can_restrict_members=True,
+                can_promote_members=False,
+                can_change_info=True,
+                can_invite_users=True,
+                can_post_stories=False,
+                can_edit_stories=False,
+                can_delete_stories=False,
             )
         if name == "CopyMessage":
             return MessageId(message_id=1000)

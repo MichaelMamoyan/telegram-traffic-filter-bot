@@ -81,7 +81,11 @@ async def on_menu(
 
         text, markup = await render_broadcast(session, state)
     elif section == "export":
-        text, markup = "📤 <b>Экспорт базы</b>", export_kb(settings.sheets_enabled)
+        text = texts.export_screen(
+            settings.google_spreadsheet_id if settings.sheets_enabled else "",
+            settings.sheets_sync_interval,
+        )
+        markup = export_kb(settings.sheets_enabled)
     else:
         await callback.answer()
         return

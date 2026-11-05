@@ -131,8 +131,38 @@ def test_channel_model_title_is_not_rendered_raw() -> None:
         id=1, chat_id=-1, title=HOSTILE, segments=[], allow_minors=False,
         is_active=False, weight=1.0, priority=100,
     )
-    from app.handlers.admin_channels import _card
-
-    text, _ = _card(channel)
+    text = texts.channel_card(
+        title=channel.title,
+        chat_id=channel.chat_id,
+        segments=channel.segments,
+        allow_minors=channel.allow_minors,
+        is_active=channel.is_active,
+        weight=channel.weight,
+        has_invite=False,
+        rights=texts.CHANNEL_RIGHTS_OK,
+    )
     assert_telegram_html(text)
     assert "<b>жирный</b>" not in text
+
+
+def test_export_screen_names_both_destinations() -> None:
+    """Экран должен сам отвечать, куда уходит выгрузка — иначе спрашивают."""
+    text = texts.export_screen("1eqVabc_XYZ-123", 30)
+    assert_telegram_html(text)
+    assert "в этот чат" in text
+    assert "https://docs.google.com/spreadsheets/d/1eqVabc_XYZ-123" in text
+    assert "30 сек" in text
+    for tab in ("Сводка", "Парни 18+", "Девушки 18+", "Младше 18", "Без фильтра"):
+        assert tab in text
+
+
+def test_export_screen_without_sheets_says_so() -> None:
+    text = texts.export_screen("", 30)
+    assert_telegram_html(text)
+    assert "не подключён" in text
+    assert "docs.google.com" not in text
+    assert "XLSX" in text, "выгрузка файлом должна остаться доступной"
+
+
+def test_export_screen_escapes_spreadsheet_id() -> None:
+    assert_telegram_html(texts.export_screen("abc<script>&", 30))
