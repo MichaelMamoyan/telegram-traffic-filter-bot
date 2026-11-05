@@ -89,6 +89,10 @@ class Settings(BaseSettings):
     # --- Google Sheets ---
     google_spreadsheet_id: str = ""
     google_credentials_file: Path = Path("secrets/google.json")
+    # Альтернатива файлу: содержимое того же JSON-ключа одной строкой.
+    # Нужна на PaaS (Amvera, Railway, Heroku), где файл с секретом в образ
+    # не положить — он исключён из репозитория.
+    google_credentials_json: str = ""
     sheets_sync_interval: int = 30
     sheets_sync_batch: int = 500
 
@@ -150,9 +154,13 @@ class Settings(BaseSettings):
         return value
 
     @property
-    def sheets_enabled(self) -> bool:
+    def has_google_credentials(self) -> bool:
         # is_file(), а не exists(): пустая переменная превращается в каталог.
-        return bool(self.google_spreadsheet_id) and self.google_credentials_file.is_file()
+        return bool(self.google_credentials_json.strip()) or self.google_credentials_file.is_file()
+
+    @property
+    def sheets_enabled(self) -> bool:
+        return bool(self.google_spreadsheet_id) and self.has_google_credentials
 
     def is_admin(self, user_id: int) -> bool:
         return user_id in self.admin_ids

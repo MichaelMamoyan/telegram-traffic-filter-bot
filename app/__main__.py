@@ -33,6 +33,11 @@ def setup_logging(level: str) -> None:
 
 async def make_storage(settings: Settings):  # type: ignore[no-untyped-def]
     """Redis для FSM; если он недоступен — не валим бота, работаем в памяти."""
+    if not settings.redis_dsn.strip():
+        # Redis не обязателен: он хранит только состояние форм в админке.
+        # Пустая переменная — осознанный отказ, а не ошибка конфигурации.
+        log.info("REDIS_DSN не задан — FSM в памяти процесса")
+        return MemoryStorage()
     try:
         storage = RedisStorage.from_url(settings.redis_dsn)
         await storage.redis.ping()

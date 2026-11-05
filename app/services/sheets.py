@@ -82,14 +82,22 @@ class SheetsSyncer:
 
     # ------------------------------------------------------------------ gspread
 
-    def _open_sync(self) -> Any:
-        import gspread
+    def _credentials(self) -> Any:
+        import json
+
         from google.oauth2.service_account import Credentials
 
-        creds = Credentials.from_service_account_file(
+        raw = self.settings.google_credentials_json.strip()
+        if raw:
+            return Credentials.from_service_account_info(json.loads(raw), scopes=SCOPES)
+        return Credentials.from_service_account_file(
             str(self.settings.google_credentials_file), scopes=SCOPES
         )
-        client = gspread.authorize(creds)
+
+    def _open_sync(self) -> Any:
+        import gspread
+
+        client = gspread.authorize(self._credentials())
         return client.open_by_key(self.settings.google_spreadsheet_id)
 
     async def _spreadsheet_handle(self) -> Any:

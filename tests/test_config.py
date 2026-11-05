@@ -125,3 +125,9 @@ def test_broken_admin_ids_fail_loudly(monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_IDS", "123,не-число")
     with pytest.raises((ValidationError, ValueError)):
         Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_empty_redis_dsn_is_allowed() -> None:
+    """Redis необязателен: он держит только состояние форм в админке."""
+    settings = _settings(redis_dsn="")
+    assert settings.redis_dsn == ""

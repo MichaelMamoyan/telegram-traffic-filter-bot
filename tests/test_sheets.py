@@ -101,3 +101,94 @@ def test_disabled_syncer_does_nothing() -> None:
     assert syncer.enabled is False
     assert asyncio.run(syncer.sync_once()) == 0
     assert asyncio.run(syncer.full_resync()) == 0
+
+
+# --------------------------------------------------------------- ключ Google
+
+
+def test_credentials_from_env_var(monkeypatch, tmp_path) -> None:
+    """На PaaS файла с ключом нет — он приходит переменной окружения."""
+    captured = {}
+
+    class FakeCreds:
+        @staticmethod
+        def from_service_account_info(info, scopes):  # type: ignore[no-untyped-def]
+            captured["info"] = info
+            captured["scopes"] = scopes
+            return "creds-from-env"
+
+        @staticmethod
+        def from_service_account_file(path, scopes):  # type: ignore[no-untyped-def]
+            raise AssertionError("не должен читать файл, когда задана переменная")
+
+    import google.oauth2.service_account as sa
+
+    monkeypatch.setattr(sa, "Credentials", FakeCreds)
+
+    settings = Settings(
+        bot_token="42:TEST",
+        google_spreadsheet_id="abc",
+        google_credentials_json='{"type": "service_account", "project_id": "p"}',
+        _env_file=None,
+    )
+    syncer = SheetsSyncer(settings, sessionmaker=None)  # type: ignore[arg-type]
+    assert syncer._credentials() == "creds-from-env"
+    assert captured["info"]["project_id"] == "p"
+    assert captured["scopes"] == ["https://www.googleapis.com/auth/spreadsheets"]
+
+
+def test_credentials_fall_back_to_file(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "google.json"
+    key_file.write_text('{"type": "service_account"}', encoding="utf-8")
+
+    class FakeCreds:
+        @staticmethod
+        def from_service_account_file(path, scopes):  # type: ignore[no-untyped-def]
+            return f"creds-from-{path}"
+
+    import google.oauth2.service_account as sa
+
+    monkeypatch.setattr(sa, "Credentials", FakeCreds)
+
+    settings = Settings(
+        bot_token="42:TEST",
+        google_spreadsheet_id="abc",
+        google_credentials_file=key_file,
+        _env_file=None,
+    )
+    syncer = SheetsSyncer(settings, sessionmaker=None)  # type: ignore[arg-type]
+    assert syncer._credentials() == f"creds-from-{key_file}"
+
+
+def test_sheets_enabled_with_env_var_only(tmp_path) -> None:
+    """Файла нет, но ключ в переменной — выгрузка должна работать."""
+    settings = Settings(
+        bot_token="42:TEST",
+        google_spreadsheet_id="abc",
+        google_credentials_json='{"type": "service_account"}',
+        google_credentials_file=tmp_path / "нет-файла.json",
+        _env_file=None,
+    )
+    assert settings.has_google_credentials is True
+    assert settings.sheets_enabled is True
+
+
+def test_sheets_disabled_without_any_credentials(tmp_path) -> None:
+    settings = Settings(
+        bot_token="42:TEST",
+        google_spreadsheet_id="abc",
+        google_credentials_file=tmp_path / "нет-файла.json",
+        _env_file=None,
+    )
+    assert settings.sheets_enabled is False
+
+
+def test_blank_env_var_is_not_credentials(tmp_path) -> None:
+    settings = Settings(
+        bot_token="42:TEST",
+        google_spreadsheet_id="abc",
+        google_credentials_json="   ",
+        google_credentials_file=tmp_path / "нет-файла.json",
+        _env_file=None,
+    )
+    assert settings.sheets_enabled is False
