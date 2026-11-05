@@ -147,3 +147,14 @@ def test_pool_size_is_configurable(monkeypatch) -> None:
     monkeypatch.setenv("DB_MAX_OVERFLOW", "40")
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert (settings.db_pool_size, settings.db_max_overflow) == (20, 40)
+
+
+def test_redis_is_not_required(monkeypatch) -> None:
+    """Отсутствие REDIS_DSN — штатная конфигурация, а не ошибка.
+
+    Некоторые PaaS не дают сохранить переменную с пустым значением, поэтому
+    её просто не задают: умолчание обязано означать «Redis не нужен».
+    """
+    monkeypatch.setenv("BOT_TOKEN", "123:TEST")
+    monkeypatch.delenv("REDIS_DSN", raising=False)
+    assert Settings(_env_file=None).redis_dsn == ""  # type: ignore[call-arg]

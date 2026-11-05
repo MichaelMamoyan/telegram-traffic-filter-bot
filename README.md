@@ -140,7 +140,7 @@ app/
 │   └── export.py        XLSX
 └── keyboards/, middlewares/, utils/
 migrations/              Alembic
-tests/                   158 тестов
+tests/                   159 тестов
 ```
 
 Одна сессия БД на апдейт (`DbSessionMiddleware`), одна транзакция, коммит на
@@ -152,7 +152,7 @@ tests/                   158 тестов
 ## Тесты
 
 ```bash
-.venv/bin/python -m pytest -q      # 158 passed
+.venv/bin/python -m pytest -q      # 159 passed
 .venv/bin/python -m ruff check app tests migrations
 ```
 
