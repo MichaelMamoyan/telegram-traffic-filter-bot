@@ -110,6 +110,47 @@ class LinkRepo:
         await self.session.flush()
         return link
 
+    async def next_pack_index(self, base: str) -> int:
+        """С какого номера продолжать пак.
+
+        Повторный заказ пака с тем же именем не начинает нумерацию заново:
+        иначе коды столкнулись бы и получили бы суффиксы вида kiril_1_2.
+        """
+        pattern = base.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        codes = (
+            await self.session.scalars(
+                select(RefLink.code).where(RefLink.code.like(f"{pattern}\\_%", escape="\\"))
+            )
+        ).all()
+        highest = 0
+        for code in codes:
+            suffix = code[len(base) + 1 :]
+            if suffix.isdigit():
+                highest = max(highest, int(suffix))
+        return highest + 1
+
+    async def create_pack(
+        self, title: str, count: int, buyer_id: int | None = None
+    ) -> list[tuple[int, RefLink]]:
+        """Создаёт пачку ссылок `Название N` и возвращает пары (номер, ссылка)."""
+        base = slugify_code(title)
+        clean_title = title.strip()[:120]
+        number = await self.next_pack_index(base)
+        created: list[tuple[int, RefLink]] = []
+
+        while len(created) < count:
+            code = f"{base}_{number}"
+            if await self.get_by_code(code):
+                number += 1
+                continue
+            link = RefLink(code=code, title=f"{clean_title} {number}", buyer_id=buyer_id)
+            self.session.add(link)
+            created.append((number, link))
+            number += 1
+
+        await self.session.flush()
+        return created
+
     async def toggle(self, link_id: int) -> RefLink | None:
         link = await self.get(link_id)
         if link:

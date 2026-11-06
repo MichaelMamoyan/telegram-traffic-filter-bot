@@ -106,7 +106,7 @@ cp .env.example .env            # DB_DSN можно указать sqlite+aiosql
 
 ```
 📊 Статистика   — воронка по ссылкам / байерам / сегментам / каналам, 4 периода
-🔗 Ссылки       — создать, выдать deep link, выключить, статистика по ссылке
+🔗 Ссылки       — создать одну или паком, выдать deep link, выключить, статистика
 📢 Каналы       — сегменты, allow_minors, вес ротации, пересоздать инвайт
 👥 Байеры       — добавить (можно с Telegram ID — тогда он сам смотрит /stats)
 ✉️ Рассылка     — фильтры → сообщение → кнопки → предпросмотр → запуск, прогресс
@@ -140,7 +140,7 @@ app/
 │   └── export.py        XLSX
 └── keyboards/, middlewares/, utils/
 migrations/              Alembic
-tests/                   159 тестов
+tests/                   177 тестов
 ```
 
 Одна сессия БД на апдейт (`DbSessionMiddleware`), одна транзакция, коммит на
@@ -152,7 +152,7 @@ tests/                   159 тестов
 ## Тесты
 
 ```bash
-.venv/bin/python -m pytest -q      # 159 passed
+.venv/bin/python -m pytest -q      # 177 passed
 .venv/bin/python -m ruff check app tests migrations
 ```
 

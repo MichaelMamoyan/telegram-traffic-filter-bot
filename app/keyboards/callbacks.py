@@ -21,7 +21,7 @@ class StatsCB(CallbackData, prefix="stats"):
 
 
 class LinkCB(CallbackData, prefix="link"):
-    action: str  # open | toggle | new | list
+    action: str  # open | toggle | new | pack | list
     link_id: int = 0
     page: int = 0
 

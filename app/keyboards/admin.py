@@ -119,6 +119,7 @@ def links_kb(links: Sequence[RefLink], page: int = 0) -> InlineKeyboardMarkup:
         *rows,
         nav,
         [_btn("➕ Новая ссылка", LinkCB(action="new"))],
+        [_btn("📦 Создать пак ссылок", LinkCB(action="pack"))],
         _menu_row(),
     )
 

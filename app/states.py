@@ -8,6 +8,12 @@ class NewLink(StatesGroup):
     buyer = State()
 
 
+class NewLinkPack(StatesGroup):
+    title = State()
+    count = State()
+    buyer = State()
+
+
 class NewBuyer(StatesGroup):
     name = State()
 

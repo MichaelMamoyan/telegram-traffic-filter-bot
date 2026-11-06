@@ -129,6 +129,38 @@ CHANNEL_RIGHTS_NOT_ADMIN = "⛔️ бот не администратор кан
 CHANNEL_RIGHTS_UNKNOWN = "❔ не удалось проверить (канал удалён или бота выгнали)"
 
 
+PACK_MAX = 100
+PACK_ASK_TITLE = (
+    "Пришлите название пака — по нему будут названы ссылки.\n\n"
+    "Например <code>Kiril</code> → ссылки <code>Kiril 1</code>, <code>Kiril 2</code> и так далее."
+)
+PACK_ASK_COUNT = "Сколько ссылок создать? Пришлите число от 1 до {max}."
+
+
+def link_pack_messages(
+    title: str, pack: list[tuple[int, object]], bot_username: str, limit: int = 3500
+) -> list[str]:
+    """Нумерованный список ссылок, разбитый по лимиту сообщения Telegram.
+
+    В одно сообщение влезает около 60 ссылок, поэтому длинные паки уходят
+    несколькими — иначе Telegram отклонит отправку целиком.
+    """
+    header = f"🔗 <b>{esc(title)}</b> — {len(pack)} шт.\n\n"
+    messages: list[str] = []
+    chunk = header
+
+    for number, link in pack:
+        line = f"{number}) https://t.me/{bot_username}?start={link.code}\n"  # type: ignore[attr-defined]
+        if len(chunk) + len(line) > limit:
+            messages.append(chunk.rstrip())
+            chunk = ""
+        chunk += line
+
+    if chunk.strip():
+        messages.append(chunk.rstrip())
+    return messages
+
+
 def channel_card(
     title: str,
     chat_id: int,

@@ -26,6 +26,7 @@ from app.db.base import Base, make_engine, make_sessionmaker
 from app.db.repo import ChannelRepo, LinkRepo, StatsRepo, UserRepo
 from app.enums import Segment
 from app.handlers import ROUTERS, register_routers
+from app.keyboards.callbacks import LinkCB
 from app.middlewares import DbSessionMiddleware
 
 ADMIN_ID = 1
@@ -564,3 +565,68 @@ async def test_admin_gets_his_menu_on_first_start(env) -> None:
     mock.calls.clear()
     await _send(dp, bot, 3200, "/start", 2)  # обычный юзер
     assert not mock.called("SetMyCommands"), "рядовому юзеру команды слать незачем"
+
+
+async def test_admin_creates_link_pack(env) -> None:
+    """Сценарий из переписки: Создать ссылки → Kiril → 10 → список в чат."""
+    dp, bot, mock, sessionmaker = env
+
+    await _send(dp, bot, ADMIN_ID, "/admin", 1)
+    await _click(dp, bot, ADMIN_ID, "menu:links", 2)
+    await _click(dp, bot, ADMIN_ID, LinkCB(action="pack").pack(), 3)
+    assert "название пака" in mock.called("EditMessageText")[-1].text
+
+    await _send(dp, bot, ADMIN_ID, "Kiril", 4)
+    assert "Сколько ссылок" in mock.called("SendMessage")[-1].text
+
+    await _send(dp, bot, ADMIN_ID, "10", 5)
+
+    pack_message = mock.called("SendMessage")[-2].text
+    assert "Kiril" in pack_message and "10 шт." in pack_message
+    for i in range(1, 11):
+        assert f"{i}) https://t.me/filter_test_bot?start=kiril_{i}" in pack_message
+
+    async with sessionmaker() as session:
+        links = await LinkRepo(session).list_all()
+        codes = {link.code for link in links}
+        assert {f"kiril_{i}" for i in range(1, 11)} <= codes
+
+
+async def test_pack_rejects_bad_count(env) -> None:
+    dp, bot, mock, sessionmaker = env
+
+    await _send(dp, bot, ADMIN_ID, "/admin", 1)
+    await _click(dp, bot, ADMIN_ID, LinkCB(action="pack").pack(), 2)
+    await _send(dp, bot, ADMIN_ID, "Kiril", 3)
+
+    for bad in ("много", "0", "-5", "1000"):
+        await _send(dp, bot, ADMIN_ID, bad, 4)
+        assert "Сколько ссылок" in mock.called("SendMessage")[-1].text
+
+    async with sessionmaker() as session:
+        assert len(await LinkRepo(session).list_all()) == 1  # только исходная ссылка
+
+    await _send(dp, bot, ADMIN_ID, "3", 5)
+    async with sessionmaker() as session:
+        assert len(await LinkRepo(session).list_all()) == 4
+
+
+async def test_pack_links_track_traffic_separately(env) -> None:
+    """Каждая ссылка пака считает свою воронку — ради этого пак и нужен."""
+    dp, bot, mock, sessionmaker = env
+
+    async with sessionmaker() as session:
+        await LinkRepo(session).create_pack(title="Kiril", count=3)
+        await session.commit()
+
+    await _send(dp, bot, 5001, "/start kiril_1", 1)
+    await _click(dp, bot, 5001, "age:1", 2)
+    await _click(dp, bot, 5001, "gender:1", 3)
+    await _join(dp, bot, 5001, -1001, 4)
+    await _send(dp, bot, 5002, "/start kiril_2", 5)
+
+    async with sessionmaker() as session:
+        rows = {row.code: row for row in await StatsRepo(session).link_funnel()}
+        assert (rows["kiril_1"].starts, rows["kiril_1"].converted) == (1, 1)
+        assert (rows["kiril_2"].starts, rows["kiril_2"].converted) == (1, 0)
+        assert rows["kiril_3"].starts == 0

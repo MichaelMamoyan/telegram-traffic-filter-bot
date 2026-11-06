@@ -19,7 +19,7 @@ from app.keyboards.admin import (
 )
 from app.keyboards.callbacks import BuyerCB, LinkCB
 from app.services.commands import apply_buyer_commands
-from app.states import NewBuyer, NewLink
+from app.states import NewBuyer, NewLink, NewLinkPack
 from app.utils.ui import safe_edit
 
 router = Router(name="admin_links")
@@ -69,6 +69,10 @@ async def on_link(
     if action == "list":
         text, markup = await render_links(session, bot, callback_data.page)
         await safe_edit(callback, text, markup)
+
+    elif action == "pack":
+        await state.set_state(NewLinkPack.title)
+        await safe_edit(callback, texts.PACK_ASK_TITLE, cancel_kb("links"))
 
     elif action == "new":
         await state.set_state(NewLink.title)
@@ -231,3 +235,66 @@ async def on_buyer_name(message: Message, session: AsyncSession, state: FSMConte
         + text,
         reply_markup=markup,
     )
+
+
+# --------------------------------------------------------------- пак ссылок
+
+
+@router.message(NewLinkPack.title, ~Command("start", "admin", "cancel"))
+async def on_pack_title(message: Message, state: FSMContext) -> None:
+    title = (message.text or "").strip()
+    if not title:
+        await message.answer("Нужен текст. Пришлите название пака.")
+        return
+    await state.update_data(title=title)
+    await state.set_state(NewLinkPack.count)
+    await message.answer(texts.PACK_ASK_COUNT.format(max=texts.PACK_MAX))
+
+
+@router.message(NewLinkPack.count, ~Command("start", "admin", "cancel"))
+async def on_pack_count(message: Message, session: AsyncSession, state: FSMContext) -> None:
+    raw = (message.text or "").strip()
+    if not raw.isdigit() or not 1 <= int(raw) <= texts.PACK_MAX:
+        await message.answer(texts.PACK_ASK_COUNT.format(max=texts.PACK_MAX))
+        return
+
+    await state.update_data(count=int(raw))
+    buyers = await BuyerRepo(session).list_all()
+    if not buyers:
+        await _create_pack(message, session, state, buyer_id=None)
+        return
+    await state.set_state(NewLinkPack.buyer)
+    await message.answer("Кому принадлежат ссылки?", reply_markup=buyer_pick_kb(buyers))
+
+
+@router.callback_query(BuyerCB.filter(), NewLinkPack.buyer)
+async def on_pack_buyer(
+    callback: CallbackQuery,
+    callback_data: BuyerCB,
+    session: AsyncSession,
+    state: FSMContext,
+) -> None:
+    if callback_data.action != "pick" or not isinstance(callback.message, Message):
+        await callback.answer()
+        return
+    await _create_pack(callback.message, session, state, buyer_id=callback_data.buyer_id or None)
+    await callback.answer()
+
+
+async def _create_pack(
+    message: Message, session: AsyncSession, state: FSMContext, buyer_id: int | None
+) -> None:
+    data = await state.get_data()
+    pack = await LinkRepo(session).create_pack(
+        title=data["title"], count=data["count"], buyer_id=buyer_id
+    )
+    await state.clear()
+
+    me = await message.bot.me() if message.bot else None
+    username = me.username if me and me.username else ""
+    # Длинный пак не влезает в одно сообщение, поэтому отправляем частями.
+    for part in texts.link_pack_messages(data["title"], pack, username):
+        await message.answer(part)
+
+    text, markup = await render_links(session, message.bot)  # type: ignore[arg-type]
+    await message.answer(text, reply_markup=markup)
