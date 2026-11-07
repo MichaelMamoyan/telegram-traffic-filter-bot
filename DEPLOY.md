@@ -21,6 +21,26 @@ Telegram не разрешает двум процессам читать обн
 
 ---
 
+## Быстрый путь: один скрипт
+
+На чистом сервере всё ставится автоматически:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MichaelMamoyan/telegram-traffic-filter-bot/main/deploy/setup-server.sh | bash
+```
+
+Скрипт поставит Docker, создаст swap, закроет всё кроме SSH, заберёт код,
+поднимет контейнеры и настроит ежедневные резервные копии базы.
+
+После первого запуска нужно заполнить `/opt/filterbot/.env` (BOT_TOKEN
+и ADMIN_IDS) и выполнить:
+
+```bash
+cd /opt/filterbot && docker compose up -d --build
+```
+
+Ниже — те же шаги вручную, если хочется контролировать каждый.
+
 ## 1. Установка Docker
 
 ```bash
