@@ -124,3 +124,27 @@ def test_no_links_lost_at_chunk_boundary(count) -> None:
     messages = texts.link_pack_messages("Kiril", _pack(count), "trafficfiltero_bot")
     joined = "\n".join(messages)
     assert joined.count("https://t.me/") == count
+
+
+async def test_buyer_links_message_fits_telegram_limit(session) -> None:
+    """У байера может быть пак из сотни ссылок — сообщение не должно превысить лимит."""
+    from app.db.repo import BuyerRepo
+    from app.keyboards.admin import my_links_kb
+
+    buyer = await BuyerRepo(session).create(name="Кирилл", tg_id=777)
+    pack = await LinkRepo(session).create_pack(title="Kiril", count=100, buyer_id=buyer.id)
+    await session.commit()
+
+    links = [link for _, link in pack]
+    parts = ["🔗 <b>Ваши ссылки</b>", ""]
+    shown = links[: texts.STATS_MAX_ROWS]
+    for link in shown:
+        parts.append(texts.link_card(link.code, link.title, "trafficfiltero_bot"))
+        parts.append("")
+    parts.append(f"Показаны {len(shown)} из {len(links)}.")
+
+    text = "\n".join(parts)
+    assert len(text) <= 4096
+    assert_telegram_html(text)
+    # Кнопок копирования тоже не должно быть больше, чем строк в сообщении.
+    assert len(my_links_kb(shown, "bot").inline_keyboard) == len(shown)

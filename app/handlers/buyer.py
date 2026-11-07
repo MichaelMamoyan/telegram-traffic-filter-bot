@@ -76,11 +76,16 @@ async def cmd_mylinks(message: Message, session: AsyncSession, bot: Bot) -> None
     me = await bot.me()
     rows = await StatsRepo(session).link_funnel(buyer_id=buyer.id)
     by_id = {row.link_id: row for row in rows}
+    # Пачками создают десятки ссылок, а в сообщение Telegram влезает 4096
+    # символов: показываем первые, остальные байер берёт у админа.
+    shown = links[: texts.STATS_MAX_ROWS]
     parts = ["🔗 <b>Ваши ссылки</b>", ""]
-    for link in links:
+    for link in shown:
         parts.append(texts.link_card(link.code, link.title, me.username or "", by_id.get(link.id)))
         parts.append("")
+    if len(links) > len(shown):
+        parts.append(f"Показаны {len(shown)} из {len(links)}.")
     parts.append("Кнопки ниже копируют ссылку в буфер обмена.")
     await message.answer(
-        "\n".join(parts), reply_markup=my_links_kb(links, me.username or "")
+        "\n".join(parts), reply_markup=my_links_kb(shown, me.username or "")
     )

@@ -71,6 +71,12 @@ def funnel_line(row: FunnelRow) -> str:
     )
 
 
+# В одно сообщение Telegram влезает 4096 символов, а строка отчёта по ссылке
+# занимает около 150. Паками создают сотни ссылок, поэтому список режем:
+# показываем самые нагруженные, остальное — в выгрузке.
+STATS_MAX_ROWS = 12
+
+
 def stats_report(
     title: str,
     period: str,
@@ -78,6 +84,7 @@ def stats_report(
     rows: list[FunnelRow],
     segments: dict[str, dict[str, int]] | None = None,
     channels: list[tuple[str, int, int]] | None = None,
+    max_rows: int = STATS_MAX_ROWS,
 ) -> str:
     parts = [
         f"📊 <b>{esc(title)}</b> · {PERIOD_TITLES.get(period, period)}",
@@ -88,8 +95,24 @@ def stats_report(
         f"{totals.conv_of_passed:.1f}% от фильтра)",
     ]
     if rows:
-        parts += ["", "— — —", ""]
-        parts += [funnel_line(row) for row in rows if row.starts or row.is_active]
+        with_traffic = [row for row in rows if row.starts]
+        idle = len(rows) - len(with_traffic)
+        shown = with_traffic[:max_rows]
+
+        if shown:
+            parts += ["", "— — —", ""]
+            parts += [funnel_line(row) for row in shown]
+
+        if not with_traffic:
+            parts += ["", f"Переходов по ссылкам пока нет (создано: {len(rows)})."]
+        else:
+            tail = []
+            if len(with_traffic) > len(shown):
+                tail.append(f"ещё {len(with_traffic) - len(shown)} с трафиком")
+            if idle:
+                tail.append(f"{idle} без переходов")
+            if tail:
+                parts += ["", f"Скрыто: {', '.join(tail)}. Полный список — 📤 Экспорт → XLSX."]
     if segments:
         parts += ["", "<b>По сегментам:</b>"]
         for segment in Segment:

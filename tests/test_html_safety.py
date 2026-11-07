@@ -166,3 +166,63 @@ def test_export_screen_without_sheets_says_so() -> None:
 
 def test_export_screen_escapes_spreadsheet_id() -> None:
     assert_telegram_html(texts.export_screen("abc<script>&", 30))
+
+
+# --------------------------------------------------------------- лимит длины
+
+
+def _many_rows(count: int, starts: int = 5):  # type: ignore[no-untyped-def]
+    return [
+        FunnelRow(
+            link_id=i, code=f"kiril_{i}", title=f"Kiril {i}",
+            buyer_name="Вася", starts=starts, passed=starts, converted=1,
+        )
+        for i in range(1, count + 1)
+    ]
+
+
+def test_stats_report_fits_telegram_limit_with_many_links() -> None:
+    """Поймали на живом боте: 83 ссылки — и Telegram отклонил сообщение целиком."""
+    text = texts.stats_report(
+        "Статистика по ссылкам", "all", _row(starts=500), _many_rows(200),
+        segments={s.value: {"starts": 50, "passed": 40, "converted": 10} for s in Segment},
+        channels=[(f"Канал {i}", 10, 3) for i in range(10)],
+    )
+    assert len(text) <= 4096, f"сообщение на {len(text)} символов не уйдёт"
+    assert_telegram_html(text)
+    assert "Скрыто" in text and "Экспорт" in text
+
+
+def test_stats_report_hides_links_without_traffic() -> None:
+    rows = _many_rows(3, starts=10) + _many_rows(50, starts=0)[:50]
+    text = texts.stats_report("Ссылки", "all", _row(), rows)
+    assert "без переходов" in text
+    assert len(text) <= 4096
+
+
+def test_stats_report_shows_everything_when_few_links() -> None:
+    text = texts.stats_report("Ссылки", "all", _row(), _many_rows(3))
+    assert "Скрыто" not in text
+    for i in (1, 2, 3):
+        assert f"Kiril {i}" in text
+
+
+def test_stats_report_without_traffic_says_so() -> None:
+    text = texts.stats_report("Ссылки", "all", _row(starts=0), _many_rows(5, starts=0))
+    assert "Переходов по ссылкам пока нет" in text
+
+
+def test_clamp_never_exceeds_limit_and_keeps_html_valid() -> None:
+    from app.utils.ui import clamp
+
+    long_text = "\n".join(f"<b>строка {i}</b> — текст подлиннее" for i in range(400))
+    clamped = clamp(long_text)
+    assert len(clamped) <= 4096
+    assert_telegram_html(clamped)
+    assert "обрезан" in clamped
+
+
+def test_clamp_leaves_short_text_untouched() -> None:
+    from app.utils.ui import clamp
+
+    assert clamp("коротко") == "коротко"
