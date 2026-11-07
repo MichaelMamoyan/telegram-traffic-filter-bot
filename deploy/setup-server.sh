@@ -86,7 +86,12 @@ docker compose exec -T postgres pg_dump -U bot filterbot \
 find /root/backups -name 'filterbot_*.sql.gz' -mtime +14 -delete
 CRON
 chmod +x /usr/local/bin/filterbot-backup
-( crontab -l 2>/dev/null | grep -v filterbot-backup; echo "0 4 * * * /usr/local/bin/filterbot-backup" ) | crontab -
+# `|| true` обязателен: при set -e пустой crontab возвращает ошибку и
+# обрывает подоболочку до записи новой строки.
+{ crontab -l 2>/dev/null || true; } | grep -v filterbot-backup > /tmp/cron.tmp || true
+echo "0 4 * * * /usr/local/bin/filterbot-backup" >> /tmp/cron.tmp
+crontab /tmp/cron.tmp
+rm -f /tmp/cron.tmp
 
 log "Готово"
 echo "Логи:     cd $APP_DIR && docker compose logs -f bot"
