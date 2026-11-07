@@ -113,9 +113,11 @@ Start polling
 3. **APIs & Services → Credentials → Create credentials → Service account**,
    роль не назначать
 4. У созданного аккаунта: **Keys → Add key → JSON**, скачать файл
-5. Положить его на сервер как `secrets/google.json`:
+5. Положить его на сервер как `secrets/google.json` и отдать владение
+   пользователю контейнера — иначе ключ будет недоступен изнутри:
    ```bash
-   scp ~/Downloads/ваш-ключ.json root@СЕРВЕР:~/telegram-traffic-filter-bot/secrets/google.json
+   scp ~/Downloads/ваш-ключ.json root@СЕРВЕР:/opt/filterbot/secrets/google.json
+   ssh root@СЕРВЕР 'chown 1000:1000 /opt/filterbot/secrets/google.json'
    ```
 6. Создать таблицу, расшарить её на email сервисного аккаунта
    (вида `имя@проект.iam.gserviceaccount.com`) с правом **Editor**
@@ -197,6 +199,6 @@ gunzip -c backup_2026-11-05.sql.gz | docker compose exec -T postgres psql -U bot
 | Админка не открывается | неверный `ADMIN_IDS`, нужен числовой ID |
 | «Нет доступных каналов» у юзера | канал выключен, не заданы сегменты или у бота нет права приглашать |
 | Подписки не считаются | канал публичный, либо нет права «Добавление подписчиков» |
-| Sheets не пишется | таблица не расшарена на сервисный аккаунт |
+| Sheets не пишется | таблица не расшарена на сервисный аккаунт, либо `secrets/google.json` не принадлежит uid 1000 — контейнер работает не от root |
 
 Диагностика почти всегда в логах: `docker compose logs bot --tail 100`.

@@ -63,6 +63,11 @@ fi
 
 mkdir -p "$APP_DIR/secrets" /root/backups
 
+# Контейнер работает под непривилегированным botuser (uid 1000), а файлы,
+# положенные root'ом с правами 600, ему недоступны: ключ Google молча
+# перестаёт читаться, и синхронизация с таблицами падает каждые 30 секунд.
+chown -R 1000:1000 "$APP_DIR/secrets"
+
 if [[ ! -f "$APP_DIR/.env" ]]; then
     cp "$APP_DIR/.env.example" "$APP_DIR/.env"
     log "Создан $APP_DIR/.env — заполните BOT_TOKEN и ADMIN_IDS, затем:"
