@@ -74,6 +74,11 @@ class Channel(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Кэш общей join-request ссылки (когда PER_USER_INVITE_LINKS=false).
     invite_link: Mapped[str | None] = mapped_column(String(255))
+    # Готовая ссылка, заданная вручную. Если указана — бот отдаёт её как есть,
+    # не создавая инвайт. Нужна, когда права админа в канале не дать или
+    # подсчёт подписок для этого канала не нужен: ценой того, что конверсия
+    # по нему считаться не будет — заявки на вступление бот не увидит.
+    offer_url: Mapped[str | None] = mapped_column(String(255))
     offer_text: Mapped[str | None] = mapped_column(Text)
     button_text: Mapped[str | None] = mapped_column(String(64))
 

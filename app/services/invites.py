@@ -27,6 +27,11 @@ class InviteService:
     async def invite_for(
         self, channel: Channel, user: User, channels: ChannelRepo
     ) -> str | None:
+        # Ссылка задана вручную — отдаём как есть. Права админа не нужны,
+        # но и подписки по этому каналу считаться не будут.
+        if channel.offer_url:
+            return channel.offer_url
+
         if self.per_user_links:
             link = await self.create_link(channel, name=f"uid {user.tg_id}")
             if link:

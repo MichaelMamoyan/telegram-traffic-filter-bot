@@ -668,3 +668,61 @@ async def test_offer_text_without_placeholder_works(env) -> None:
     await _click(dp, bot, 6100, "age:1", 2)
     await _click(dp, bot, 6100, "gender:1", 3)
     assert mock.called("EditMessageText")[-1].text == "Жмите кнопку ниже."
+
+
+async def test_channel_with_manual_link_needs_no_admin_rights(env) -> None:
+    """Готовая ссылка отдаётся как есть: права бота в канале не нужны.
+
+    Цена — подписки по такому каналу не считаются: заявок на вступление
+    бот не увидит, потому что ссылку выпускал не он.
+    """
+    dp, bot, mock, sessionmaker = env
+    mock.fail_methods.add("CreateChatInviteLink")  # прав нет вовсе
+
+    async with sessionmaker() as session:
+        channel = await ChannelRepo(session).get_by_chat_id(-1001)
+        channel.offer_url = "https://t.me/+готоваяСсылка"
+        await session.commit()
+
+    await _send(dp, bot, 7000, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 7000, "age:1", 2)
+    await _click(dp, bot, 7000, "gender:1", 3)
+
+    offer = mock.called("EditMessageText")[-1]
+    assert "Derek" in offer.text, "оффер выдан, а не заглушка"
+    assert offer.reply_markup.inline_keyboard[0][0].url == "https://t.me/+готоваяСсылка"
+    assert not mock.called("CreateChatInviteLink"), "инвайт создавать не пытались"
+
+    async with sessionmaker() as session:
+        user = await UserRepo(session).get(7000)
+        assert user.assigned_channel_id is not None
+        assert user.is_subscribed is False  # подписку по такому каналу не узнать
+
+
+async def test_manual_link_wins_over_cached_invite(env) -> None:
+    dp, bot, mock, sessionmaker = env
+
+    async with sessionmaker() as session:
+        channel = await ChannelRepo(session).get_by_chat_id(-1001)
+        channel.invite_link = "https://t.me/+старыйИнвайт"
+        channel.offer_url = "https://t.me/+ручнаяСсылка"
+        await session.commit()
+
+    await _send(dp, bot, 7100, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 7100, "age:1", 2)
+    await _click(dp, bot, 7100, "gender:1", 3)
+
+    url = mock.called("EditMessageText")[-1].reply_markup.inline_keyboard[0][0].url
+    assert url == "https://t.me/+ручнаяСсылка"
+
+
+async def test_without_manual_link_invite_is_created_as_before(env) -> None:
+    """Каналы без своей ссылки работают по-прежнему: инвайт с заявкой."""
+    dp, bot, mock, sessionmaker = env
+
+    await _send(dp, bot, 7200, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 7200, "age:1", 2)
+    await _click(dp, bot, 7200, "gender:1", 3)
+
+    assert mock.called("CreateChatInviteLink"), "инвайт должен создаваться"
+    assert mock.called("CreateChatInviteLink")[-1].creates_join_request is True
