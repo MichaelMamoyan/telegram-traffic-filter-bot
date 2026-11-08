@@ -206,9 +206,10 @@ async def _deliver_offer(
         {"segment": segment.value, "channel_id": channel.id, "channel": channel.title},
     )
 
-    text = (channel.offer_text or texts.OFFER_DEFAULT).format(
-        channel=texts.esc(channel.title)
-    )
+    # Текст оффера пишет админ, и .format() на произвольной строке падает от
+    # любой фигурной скобки. Подставляем единственный плейсхолдер вручную.
+    template = channel.offer_text or texts.OFFER_DEFAULT
+    text = template.replace("{channel}", texts.esc(channel.title))
     await _edit(callback, text, offer_kb(url, channel.button_text))
 
 

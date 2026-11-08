@@ -630,3 +630,41 @@ async def test_pack_links_track_traffic_separately(env) -> None:
         assert (rows["kiril_1"].starts, rows["kiril_1"].converted) == (1, 1)
         assert (rows["kiril_2"].starts, rows["kiril_2"].converted) == (1, 0)
         assert rows["kiril_3"].starts == 0
+
+
+async def test_custom_offer_text_with_braces_does_not_crash(env) -> None:
+    """Текст оффера пишет админ: фигурная скобка в нём не должна ронять выдачу."""
+    dp, bot, mock, sessionmaker = env
+
+    async with sessionmaker() as session:
+        channel = await ChannelRepo(session).get_by_chat_id(-1001)
+        channel.offer_text = (
+            "⚠️ ВНИМАНИЕ | 18+\n\nКанал {channel} только для лиц старше 18.\n"
+            "Условия: KYC {верификация}, депозит от 100$ (не менее 50%)."
+        )
+        channel.button_text = "Подписаться"
+        await session.commit()
+
+    await _send(dp, bot, 6000, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 6000, "age:1", 2)
+    await _click(dp, bot, 6000, "gender:1", 3)
+
+    offer = mock.called("EditMessageText")[-1]
+    assert "ВНИМАНИЕ" in offer.text
+    assert "Канал Derek только для лиц" in offer.text, "плейсхолдер подставился"
+    assert "{верификация}" in offer.text, "чужие скобки остались как есть"
+    assert offer.reply_markup.inline_keyboard[0][0].text == "Подписаться"
+
+
+async def test_offer_text_without_placeholder_works(env) -> None:
+    dp, bot, mock, sessionmaker = env
+
+    async with sessionmaker() as session:
+        channel = await ChannelRepo(session).get_by_chat_id(-1001)
+        channel.offer_text = "Жмите кнопку ниже."
+        await session.commit()
+
+    await _send(dp, bot, 6100, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 6100, "age:1", 2)
+    await _click(dp, bot, 6100, "gender:1", 3)
+    assert mock.called("EditMessageText")[-1].text == "Жмите кнопку ниже."
