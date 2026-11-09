@@ -8,10 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repo import StatsRepo, UserRepo
 from app.services.rows import (
+    SHORT_HEADERS,
     SUMMARY_HEADERS,
+    TAB_SHORT,
     TAB_SUMMARY,
     USER_HEADERS,
     USER_TABS,
+    short_rows,
     summary_rows,
     tab_for,
     user_row,
@@ -26,20 +29,28 @@ async def build_xlsx(session: AsyncSession, tz: str = "UTC") -> tuple[bytes, str
     by_tab: dict[str, list[list[str]]] = {tab: [] for tab in USER_TABS}
     for user in users:
         by_tab[tab_for(user)].append(user_row(user, tz))
-    summary = summary_rows(funnel)
 
-    data = await asyncio.to_thread(_render, by_tab, summary)
+    data = await asyncio.to_thread(
+        _render, by_tab, summary_rows(funnel), short_rows(funnel)
+    )
     name = f"filter_bot_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return data, name
 
 
-def _render(by_tab: dict[str, list[list[str]]], summary: list[list[str]]) -> bytes:
+def _render(
+    by_tab: dict[str, list[list[str]]],
+    summary: list[list[str]],
+    short: list[list[str]],
+) -> bytes:
     from openpyxl import Workbook
 
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = TAB_SUMMARY
     _fill(sheet, SUMMARY_HEADERS, summary)
+
+    # Тот же набор листов, что и в Google Sheets: выгрузки не должны расходиться.
+    _fill(workbook.create_sheet(TAB_SHORT), SHORT_HEADERS, short)
 
     for tab in USER_TABS:
         _fill(workbook.create_sheet(tab), USER_HEADERS, by_tab.get(tab, []))

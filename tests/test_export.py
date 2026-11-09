@@ -10,11 +10,13 @@ from app.db.repo import BuyerRepo, ChannelRepo, LinkRepo, OfferRepo, UserRepo
 from app.enums import AgeStatus, Gender, Segment, resolve_segment
 from app.services.export import build_xlsx
 from app.services.rows import (
+    SHORT_HEADERS,
     SUMMARY_HEADERS,
     TAB_FEMALE_ADULT,
     TAB_MALE_ADULT,
     TAB_MINORS,
     TAB_NO_FILTER,
+    TAB_SHORT,
     TAB_SUMMARY,
     USER_HEADERS,
 )
@@ -56,7 +58,7 @@ async def test_xlsx_has_all_tabs_and_splits_audiences(session) -> None:
 
     workbook = load_workbook(BytesIO(data))
     assert workbook.sheetnames == [
-        TAB_SUMMARY, TAB_MALE_ADULT, TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER
+        TAB_SUMMARY, TAB_SHORT, TAB_MALE_ADULT, TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER
     ]
 
     def rows(tab: str) -> list[list[str]]:
@@ -91,3 +93,18 @@ async def test_xlsx_on_empty_base_still_builds(session) -> None:
     data, _ = await build_xlsx(session)
     workbook = load_workbook(BytesIO(data))
     assert workbook[TAB_MALE_ADULT].max_row == 1  # только заголовок
+
+
+async def test_xlsx_short_sheet_matches_google_sheets(session) -> None:
+    """Обе выгрузки должны давать одинаковый лист «Коротко»."""
+    await _seed(session)
+    from app.db.repo import StatsRepo
+    from app.services.rows import short_rows
+
+    data, _ = await build_xlsx(session, "Europe/Moscow")
+    workbook = load_workbook(BytesIO(data))
+    rows = [list(r) for r in workbook[TAB_SHORT].iter_rows(values_only=True)]
+
+    expected = short_rows(await StatsRepo(session).link_funnel())
+    assert rows[0] == SHORT_HEADERS
+    assert [list(r) for r in rows[1:]] == expected
