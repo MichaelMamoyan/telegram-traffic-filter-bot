@@ -226,7 +226,10 @@ def test_short_rows_include_links_without_traffic() -> None:
     from app.services.rows import short_rows
 
     rows = short_rows(_funnel(("Kiril 1", 50, 20), ("Kiril 2", 0, 0), ("Kiril 3", 7, 1)))
-    assert rows == [["Kiril 1", "20"], ["Kiril 2", "0"], ["Kiril 3", "1"]]
+    assert rows == [
+        ["Kiril — всего", "21"],
+        ["Kiril 1", "20"], ["Kiril 2", "0"], ["Kiril 3", "1"],
+    ]
 
 
 def test_short_rows_fall_back_to_code_without_title() -> None:
@@ -276,8 +279,9 @@ def test_large_pack_is_shown_whole() -> None:
 
     funnel = _funnel(*[(f"ММ {i}", 1 if i == 150 else 0, 0) for i in range(1, 151)])
     rows = short_rows(funnel)
-    assert len(rows) == 150
-    assert [r[0] for r in rows[:3]] == ["ММ 1", "ММ 2", "ММ 3"]
+    assert len(rows) == 151, "150 ссылок плюс строка итога"
+    assert rows[0] == ["ММ — всего", "0"]
+    assert [r[0] for r in rows[1:4]] == ["ММ 1", "ММ 2", "ММ 3"]
     assert rows[-1] == ["ММ 150", "0"]
 
 
@@ -301,7 +305,10 @@ def test_links_of_one_pack_go_together_and_in_order() -> None:
         ("ММ 3", 10, 1), ("Петя 1", 80, 40), ("ММ 1", 50, 30),
         ("Петя 2", 5, 2), ("ММ 2", 7, 4),
     ))
-    assert [r[0] for r in rows] == ["Петя 1", "Петя 2", "ММ 1", "ММ 2", "ММ 3"]
+    assert [r[0] for r in rows] == [
+        "Петя — всего", "Петя 1", "Петя 2",
+        "ММ — всего", "ММ 1", "ММ 2", "ММ 3",
+    ]
 
 
 def test_packs_ordered_by_total_subscriptions() -> None:
@@ -310,14 +317,15 @@ def test_packs_ordered_by_total_subscriptions() -> None:
     rows = short_rows(_funnel(
         ("Слабый 1", 100, 1), ("Сильный 1", 10, 5), ("Сильный 2", 10, 6),
     ))
-    assert [r[0] for r in rows] == ["Сильный 1", "Сильный 2", "Слабый 1"]
+    assert [r[0] for r in rows] == ["Сильный — всего", "Сильный 1", "Сильный 2", "Слабый 1"]
 
 
 def test_single_links_mix_with_packs_by_the_same_rule() -> None:
     from app.services.rows import short_rows
 
     rows = short_rows(_funnel(("bogdan", 20, 9), ("ММ 1", 5, 2), ("ММ 2", 5, 3)))
-    assert [r[0] for r in rows] == ["bogdan", "ММ 1", "ММ 2"]
+    assert [r[0] for r in rows] == ["bogdan", "ММ — всего", "ММ 1", "ММ 2"]
+    assert ["bogdan", "9"] in rows, "у одиночной ссылки строки итога быть не должно"
 
 
 def test_grouping_keeps_every_link_with_traffic() -> None:
@@ -325,5 +333,20 @@ def test_grouping_keeps_every_link_with_traffic() -> None:
 
     funnel = _funnel(*[(f"ММ {i}", i, i % 3) for i in range(1, 31)])
     rows = short_rows(funnel)
-    assert len(rows) == 30
-    assert [r[0] for r in rows] == [f"ММ {i}" for i in range(1, 31)]
+    assert rows[0] == ["ММ — всего", str(sum(i % 3 for i in range(1, 31)))]
+    assert [r[0] for r in rows[1:]] == [f"ММ {i}" for i in range(1, 31)]
+
+
+def test_pack_total_sums_subscriptions() -> None:
+    from app.services.rows import short_rows
+
+    rows = short_rows(_funnel(("ММ 1", 10, 5), ("ММ 2", 10, 7), ("ММ 3", 10, 0)))
+    assert rows[0] == ["ММ — всего", "12"]
+
+
+def test_pack_title_handles_latin_and_cyrillic() -> None:
+    """Пак могли назвать и «MM», и «ММ» — код у обоих один, имя берём из названия."""
+    from app.services.rows import short_rows
+
+    latin = short_rows(_funnel(("MM 1", 1, 1), ("MM 2", 1, 1)))
+    assert latin[0][0] == "MM — всего"

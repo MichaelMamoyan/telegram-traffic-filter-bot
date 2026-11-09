@@ -102,6 +102,16 @@ def pack_key(code: str) -> tuple[str, int]:
     return match.group("base"), int(match.group("number"))
 
 
+def pack_title(rows: list) -> str:
+    """Имя пака для строки итога: берём из названия ссылки, отбрасывая номер."""
+    first = rows[0]
+    title = first.title or first.code
+    head = title.rsplit(" ", 1)
+    if len(head) == 2 and head[1].isdigit():
+        return head[0]
+    return pack_key(first.code)[0]
+
+
 def short_rows(funnel: list) -> list[list[str]]:
     """Ссылка и число подписок, сгруппировано по пакам.
 
@@ -120,11 +130,17 @@ def short_rows(funnel: list) -> list[list[str]]:
         packs.items(),
         key=lambda item: (-sum(r.converted for r in item[1]), item[0]),
     )
-    return [
-        [row.title or row.code, str(row.converted)]
-        for _, rows in ordered
-        for row in sorted(rows, key=lambda r: pack_key(r.code)[1])
-    ]
+
+    result: list[list[str]] = []
+    for _, rows in ordered:
+        rows = sorted(rows, key=lambda r: pack_key(r.code)[1])
+        # Итог по паку — только когда ссылок больше одной: для одиночной
+        # строка «всего» дублировала бы её саму.
+        if len(rows) > 1:
+            name = pack_title(rows)
+            result.append([f"{name} — всего", str(sum(r.converted for r in rows))])
+        result += [[row.title or row.code, str(row.converted)] for row in rows]
+    return result
 
 
 def summary_rows(funnel: list) -> list[list[str]]:
