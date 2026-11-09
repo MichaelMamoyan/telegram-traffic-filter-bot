@@ -12,6 +12,10 @@ TAB_MALE_ADULT = "Парни 18+"
 TAB_FEMALE_ADULT = "Девушки 18+"
 TAB_MINORS = "Младше 18"
 TAB_NO_FILTER = "Без фильтра"
+# Узкий лист под быстрый просмотр: какая ссылка сколько привела.
+# Полная сводка остаётся на своём листе — этот нужен, чтобы цифры можно
+# было читать с телефона и не выдёргивать их из девяти колонок.
+TAB_SHORT = "Коротко"
 
 USER_TABS = (TAB_MALE_ADULT, TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER)
 
@@ -28,6 +32,8 @@ USER_HEADERS = [
     "Дата входа",
     "Дата подписки",
 ]
+
+SHORT_HEADERS = ["Ссылка", "Зашло", "Подписалось"]
 
 SUMMARY_HEADERS = [
     "Ссылка",
@@ -77,6 +83,15 @@ def user_row(user: User, tz: str = "UTC") -> list[str]:
         "да" if user.is_subscribed else "нет",
         _fmt_dt(user.started_at, tz),
         _fmt_dt(user.subscribed_at, tz),
+    ]
+
+
+def short_rows(funnel: list) -> list[list[str]]:
+    """Только ссылки с трафиком: ссылка, сколько зашло, сколько подписалось."""
+    return [
+        [row.title or row.code, str(row.starts), str(row.converted)]
+        for row in funnel
+        if row.starts
     ]
 
 

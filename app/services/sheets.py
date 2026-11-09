@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.config import Settings
 from app.db.repo import SheetStateRepo, StatsRepo, UserRepo
 from app.services.rows import (
+    SHORT_HEADERS,
     SUMMARY_HEADERS,
+    TAB_SHORT,
     TAB_SUMMARY,
     USER_HEADERS,
     USER_TABS,
+    short_rows,
     summary_rows,
     tab_for,
     user_row,
@@ -126,10 +129,11 @@ class SheetsSyncer:
         """
         spreadsheet = self._spreadsheet
         existing = {worksheet.title for worksheet in spreadsheet.worksheets()}
-        for tab in (TAB_SUMMARY, *USER_TABS):
+        headers_by_tab = {TAB_SUMMARY: SUMMARY_HEADERS, TAB_SHORT: SHORT_HEADERS}
+        for tab in (TAB_SUMMARY, TAB_SHORT, *USER_TABS):
             if tab in existing:
                 continue
-            headers = SUMMARY_HEADERS if tab == TAB_SUMMARY else USER_HEADERS
+            headers = headers_by_tab.get(tab, USER_HEADERS)
             worksheet = spreadsheet.add_worksheet(
                 title=tab, rows=500, cols=max(len(headers), 12)
             )
@@ -143,8 +147,20 @@ class SheetsSyncer:
         await asyncio.to_thread(self._ensure_all_tabs_sync)
         self._tabs_ready = True
 
+    def _write_table_sync(self, tab: str, headers: list[str], rows: list[list[str]]) -> None:
+        """Перезаписывает небольшой лист целиком — он всегда помещается в один запрос."""
+        worksheet = self._ensure_tab(self._spreadsheet, tab, headers)
+        worksheet.clear()
+        worksheet.batch_update(
+            [{"range": "A1", "values": [headers, *rows]}], value_input_option="USER_ENTERED"
+        )
+        worksheet.freeze(rows=1)
+
     def _write_sync(
-        self, payload: dict[str, list[tuple[int, list[str]]]], summary: list[list[str]]
+        self,
+        payload: dict[str, list[tuple[int, list[str]]]],
+        summary: list[list[str]],
+        short: list[list[str]] | None = None,
     ) -> None:
         spreadsheet = self._spreadsheet
         for tab, rows in payload.items():
@@ -163,13 +179,9 @@ class SheetsSyncer:
             )
 
         if summary is not None:
-            worksheet = self._ensure_tab(spreadsheet, TAB_SUMMARY, SUMMARY_HEADERS)
-            worksheet.clear()
-            worksheet.batch_update(
-                [{"range": "A1", "values": [SUMMARY_HEADERS, *summary]}],
-                value_input_option="USER_ENTERED",
-            )
-            worksheet.freeze(rows=1)
+            self._write_table_sync(TAB_SUMMARY, SUMMARY_HEADERS, summary)
+        if short is not None:
+            self._write_table_sync(TAB_SHORT, SHORT_HEADERS, short)
 
     # ------------------------------------------------------------------ sync
 
@@ -184,8 +196,10 @@ class SheetsSyncer:
             state_repo = SheetStateRepo(session)
             pending = await users_repo.pending_sheet_sync(self.settings.sheets_sync_batch)
             if not pending:
-                summary = summary_rows(await StatsRepo(session).link_funnel())
-                await asyncio.to_thread(self._write_sync, {}, summary)
+                funnel = await StatsRepo(session).link_funnel()
+                await asyncio.to_thread(
+                    self._write_sync, {}, summary_rows(funnel), short_rows(funnel)
+                )
                 return 0
 
             payload: dict[str, list[tuple[int, list[str]]]] = {tab: [] for tab in USER_TABS}
@@ -204,8 +218,10 @@ class SheetsSyncer:
                 payload[tab].append((row, user_row(user, self.settings.tz_name)))
                 assignments.append((user.tg_id, tab, row))
 
-            summary = summary_rows(await StatsRepo(session).link_funnel())
-            await asyncio.to_thread(self._write_sync, payload, summary)
+            funnel = await StatsRepo(session).link_funnel()
+            await asyncio.to_thread(
+                self._write_sync, payload, summary_rows(funnel), short_rows(funnel)
+            )
 
             for tg_id, tab, row in assignments:
                 await users_repo.mark_synced(tg_id, tab, row)

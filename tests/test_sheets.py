@@ -11,6 +11,7 @@ from app.services.rows import (
     TAB_MALE_ADULT,
     TAB_MINORS,
     TAB_NO_FILTER,
+    TAB_SHORT,
     TAB_SUMMARY,
     USER_HEADERS,
     USER_TABS,
@@ -24,12 +25,16 @@ class FakeWorksheet:
         self.updates: list[list] = []
         self.frozen_rows = 0
         self.row_count = 500
+        self.cleared = False
 
     def batch_update(self, data, **kwargs):  # type: ignore[no-untyped-def]
         self.updates.append(data)
 
     def freeze(self, rows: int = 0, cols: int = 0) -> None:
         self.frozen_rows = rows
+
+    def clear(self) -> None:
+        self.cleared = True
 
 
 class FakeSpreadsheet:
@@ -39,6 +44,14 @@ class FakeSpreadsheet:
 
     def worksheets(self) -> list[FakeWorksheet]:
         return list(self.sheets)
+
+    def worksheet(self, title: str) -> FakeWorksheet:
+        import gspread
+
+        for sheet in self.sheets:
+            if sheet.title == title:
+                return sheet
+        raise gspread.WorksheetNotFound(title)
 
     def add_worksheet(self, title: str, rows: int, cols: int) -> FakeWorksheet:
         worksheet = FakeWorksheet(title)
@@ -60,7 +73,7 @@ def test_all_tabs_are_created_on_first_sync() -> None:
     _syncer(spreadsheet)._ensure_all_tabs_sync()
 
     assert spreadsheet.added == [
-        TAB_SUMMARY, TAB_MALE_ADULT, TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER
+        TAB_SUMMARY, TAB_SHORT, TAB_MALE_ADULT, TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER
     ]
     titles = [w.title for w in spreadsheet.worksheets()]
     assert titles[0] == "Sheet1"  # чужие листы не трогаем
@@ -81,7 +94,7 @@ def test_headers_match_the_tab_kind() -> None:
 def test_existing_tabs_are_not_recreated() -> None:
     spreadsheet = FakeSpreadsheet([TAB_SUMMARY, TAB_MALE_ADULT])
     _syncer(spreadsheet)._ensure_all_tabs_sync()
-    assert spreadsheet.added == [TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER]
+    assert spreadsheet.added == [TAB_SHORT, TAB_FEMALE_ADULT, TAB_MINORS, TAB_NO_FILTER]
 
 
 def test_tabs_are_ensured_only_once_per_run() -> None:
@@ -192,3 +205,57 @@ def test_blank_env_var_is_not_credentials(tmp_path) -> None:
         _env_file=None,
     )
     assert settings.sheets_enabled is False
+
+
+# --------------------------------------------------------------- узкий лист
+
+
+def _funnel(*triples):  # type: ignore[no-untyped-def]
+    from app.db.repo import FunnelRow
+
+    return [
+        FunnelRow(link_id=i, code=f"code_{i}", title=title, buyer_name=None,
+                  starts=starts, passed=starts, converted=conv)
+        for i, (title, starts, conv) in enumerate(triples, 1)
+    ]
+
+
+def test_short_rows_keep_only_links_with_traffic() -> None:
+    from app.services.rows import short_rows
+
+    rows = short_rows(_funnel(("Kiril 1", 50, 20), ("Kiril 2", 0, 0), ("Kiril 3", 7, 1)))
+    assert rows == [["Kiril 1", "50", "20"], ["Kiril 3", "7", "1"]]
+
+
+def test_short_rows_fall_back_to_code_without_title() -> None:
+    from app.db.repo import FunnelRow
+    from app.services.rows import short_rows
+
+    row = FunnelRow(link_id=1, code="kiril_1", title="", buyer_name=None,
+                    starts=3, passed=3, converted=1)
+    assert short_rows([row]) == [["kiril_1", "3", "1"]]
+
+
+def test_short_tab_is_created_with_its_own_headers() -> None:
+    from app.services.rows import SHORT_HEADERS, TAB_SHORT
+
+    spreadsheet = FakeSpreadsheet([])
+    _syncer(spreadsheet)._ensure_all_tabs_sync()
+
+    assert TAB_SHORT in spreadsheet.added
+    by_title = {w.title: w for w in spreadsheet.worksheets()}
+    assert by_title[TAB_SHORT].updates[0][0]["values"] == [SHORT_HEADERS]
+    assert by_title[TAB_SHORT].frozen_rows == 1
+
+
+def test_short_sheet_is_rewritten_whole() -> None:
+    """Лист узкий, поэтому переписывается целиком — без возни с номерами строк."""
+    from app.services.rows import SHORT_HEADERS, TAB_SHORT
+
+    spreadsheet = FakeSpreadsheet([])
+    syncer = _syncer(spreadsheet)
+    syncer._ensure_all_tabs_sync()
+    syncer._write_sync({}, [], [["Kiril 1", "50", "20"]])
+
+    sheet = next(w for w in spreadsheet.worksheets() if w.title == TAB_SHORT)
+    assert sheet.updates[-1][0]["values"] == [SHORT_HEADERS, ["Kiril 1", "50", "20"]]
