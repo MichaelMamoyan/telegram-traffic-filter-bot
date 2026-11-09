@@ -221,12 +221,12 @@ def _funnel(*triples):  # type: ignore[no-untyped-def]
     ]
 
 
-def test_short_rows_keep_only_links_with_traffic() -> None:
-    """Ссылка без переходов не нужна, а с переходами и нулём подписок — нужна."""
+def test_short_rows_include_links_without_traffic() -> None:
+    """Пак раздаётся целиком, поэтому в листе должны быть все его ссылки."""
     from app.services.rows import short_rows
 
     rows = short_rows(_funnel(("Kiril 1", 50, 20), ("Kiril 2", 0, 0), ("Kiril 3", 7, 1)))
-    assert rows == [["Kiril 1", "20"], ["Kiril 3", "1"]]
+    assert rows == [["Kiril 1", "20"], ["Kiril 2", "0"], ["Kiril 3", "1"]]
 
 
 def test_short_rows_fall_back_to_code_without_title() -> None:
@@ -268,6 +268,17 @@ def test_short_rows_keep_links_with_traffic_but_no_subscriptions() -> None:
     from app.services.rows import short_rows
 
     assert short_rows(_funnel(("Слитая", 300, 0))) == [["Слитая", "0"]]
+
+
+def test_large_pack_is_shown_whole() -> None:
+    """Пак из 150 ссылок: раньше в лист попадали только отработавшие."""
+    from app.services.rows import short_rows
+
+    funnel = _funnel(*[(f"ММ {i}", 1 if i == 150 else 0, 0) for i in range(1, 151)])
+    rows = short_rows(funnel)
+    assert len(rows) == 150
+    assert [r[0] for r in rows[:3]] == ["ММ 1", "ММ 2", "ММ 3"]
+    assert rows[-1] == ["ММ 150", "0"]
 
 
 # --------------------------------------------------------------- группировка
