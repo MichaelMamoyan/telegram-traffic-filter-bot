@@ -726,3 +726,55 @@ async def test_without_manual_link_invite_is_created_as_before(env) -> None:
 
     assert mock.called("CreateChatInviteLink"), "инвайт должен создаваться"
     assert mock.called("CreateChatInviteLink")[-1].creates_join_request is True
+
+
+async def test_disabled_link_stops_counting_but_serves_user(env) -> None:
+    """Кнопка «Выключить ссылку» раньше меняла только значок в списке."""
+    dp, bot, mock, sessionmaker = env
+
+    async with sessionmaker() as session:
+        link = await LinkRepo(session).get_by_code("vasya_tiktok_01")
+        link.is_active = False
+        await session.commit()
+
+    await _send(dp, bot, 8000, "/start vasya_tiktok_01", 1)
+    await _click(dp, bot, 8000, "age:1", 2)
+    await _click(dp, bot, 8000, "gender:1", 3)
+
+    async with sessionmaker() as session:
+        user = await UserRepo(session).get(8000)
+        assert user is not None, "юзера не отвергаем — трафик уже оплачен"
+        assert user.assigned_channel is not None, "канал всё равно выдаём"
+        assert user.ref_link_id is None, "но ссылке переход не засчитывается"
+        assert user.ref_payload == "vasya_tiktok_01", "код перехода сохранён"
+
+        rows = await StatsRepo(session).link_funnel()
+        row = next(r for r in rows if r.code == "vasya_tiktok_01")
+        assert row.starts == 0
+        assert (await StatsRepo(session).organic_funnel()).starts == 1
+
+
+async def test_enabled_link_counts_as_before(env) -> None:
+    dp, bot, mock, sessionmaker = env
+    await _send(dp, bot, 8100, "/start vasya_tiktok_01", 1)
+
+    async with sessionmaker() as session:
+        rows = await StatsRepo(session).link_funnel()
+        assert next(r for r in rows if r.code == "vasya_tiktok_01").starts == 1
+
+
+async def test_disabled_link_does_not_spawn_a_duplicate(env) -> None:
+    """Автосоздание не должно срабатывать на выключенную ссылку."""
+    dp, bot, mock, sessionmaker = env
+
+    async with sessionmaker() as session:
+        link = await LinkRepo(session).get_by_code("vasya_tiktok_01")
+        link.is_active = False
+        await session.commit()
+        before = len(await LinkRepo(session).list_all())
+
+    await _send(dp, bot, 8200, "/start vasya_tiktok_01", 1)
+
+    async with sessionmaker() as session:
+        links = await LinkRepo(session).list_all()
+        assert len(links) == before, [link.code for link in links]

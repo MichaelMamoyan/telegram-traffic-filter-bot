@@ -41,7 +41,18 @@ async def cmd_start(
     payload = parse_start_payload(command.args)
     links = LinkRepo(session)
     link = await links.get_by_code(payload) if payload else None
-    if link is None and payload and settings.auto_create_unknown_links:
+    code_known = link is not None
+
+    # Выключенная ссылка перестаёт собирать статистику, но юзера не отвергаем:
+    # трафик уже оплачен, и терять человека из-за настройки незачем —
+    # он просто попадёт в «органику».
+    if link is not None and not link.is_active:
+        log.info("Переход по выключенной ссылке %s — считаем органикой", link.code)
+        link = None
+
+    # Автосоздание — только для действительно неизвестного кода: иначе переход
+    # по выключенной ссылке плодил бы её дубль с суффиксом.
+    if link is None and not code_known and payload and settings.auto_create_unknown_links:
         link = await links.create(title=payload, code=payload)
         log.info("Автоматически создана реф-ссылка по неизвестному payload: %s", payload)
 
