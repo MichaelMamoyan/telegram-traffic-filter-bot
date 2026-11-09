@@ -211,10 +211,11 @@ def test_blank_env_var_is_not_credentials(tmp_path) -> None:
 
 
 def _funnel(*triples):  # type: ignore[no-untyped-def]
-    from app.db.repo import FunnelRow
+    """Каждый элемент: (название, зашло, подписалось). Код берётся из названия."""
+    from app.db.repo import FunnelRow, slugify_code
 
     return [
-        FunnelRow(link_id=i, code=f"code_{i}", title=title, buyer_name=None,
+        FunnelRow(link_id=i, code=slugify_code(title), title=title, buyer_name=None,
                   starts=starts, passed=starts, converted=conv)
         for i, (title, starts, conv) in enumerate(triples, 1)
     ]
@@ -267,3 +268,51 @@ def test_short_rows_keep_links_with_traffic_but_no_subscriptions() -> None:
     from app.services.rows import short_rows
 
     assert short_rows(_funnel(("Слитая", 300, 0))) == [["Слитая", "0"]]
+
+
+# --------------------------------------------------------------- группировка
+
+
+def test_pack_key_splits_code() -> None:
+    from app.services.rows import pack_key
+
+    assert pack_key("kiril_7") == ("kiril", 7)
+    assert pack_key("mm_12") == ("mm", 12)
+    assert pack_key("bogdan") == ("bogdan", 0)
+    assert pack_key("vasya_tiktok_01") == ("vasya_tiktok", 1)
+
+
+def test_links_of_one_pack_go_together_and_in_order() -> None:
+    """Раньше ссылки пака были разбросаны по таблице: сортировка шла по трафику."""
+    from app.services.rows import short_rows
+
+    rows = short_rows(_funnel(
+        ("ММ 3", 10, 1), ("Петя 1", 80, 40), ("ММ 1", 50, 30),
+        ("Петя 2", 5, 2), ("ММ 2", 7, 4),
+    ))
+    assert [r[0] for r in rows] == ["Петя 1", "Петя 2", "ММ 1", "ММ 2", "ММ 3"]
+
+
+def test_packs_ordered_by_total_subscriptions() -> None:
+    from app.services.rows import short_rows
+
+    rows = short_rows(_funnel(
+        ("Слабый 1", 100, 1), ("Сильный 1", 10, 5), ("Сильный 2", 10, 6),
+    ))
+    assert [r[0] for r in rows] == ["Сильный 1", "Сильный 2", "Слабый 1"]
+
+
+def test_single_links_mix_with_packs_by_the_same_rule() -> None:
+    from app.services.rows import short_rows
+
+    rows = short_rows(_funnel(("bogdan", 20, 9), ("ММ 1", 5, 2), ("ММ 2", 5, 3)))
+    assert [r[0] for r in rows] == ["bogdan", "ММ 1", "ММ 2"]
+
+
+def test_grouping_keeps_every_link_with_traffic() -> None:
+    from app.services.rows import short_rows
+
+    funnel = _funnel(*[(f"ММ {i}", i, i % 3) for i in range(1, 31)])
+    rows = short_rows(funnel)
+    assert len(rows) == 30
+    assert [r[0] for r in rows] == [f"ММ {i}" for i in range(1, 31)]

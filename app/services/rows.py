@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from zoneinfo import ZoneInfo
 
 from app.db.models import User
@@ -86,14 +87,44 @@ def user_row(user: User, tz: str = "UTC") -> list[str]:
     ]
 
 
+_PACK_SUFFIX = re.compile(r"^(?P<base>.+)_(?P<number>\d+)$")
+
+
+def pack_key(code: str) -> tuple[str, int]:
+    """Разбирает код `kiril_7` на пак и номер внутри пака.
+
+    Нужно, чтобы ссылки одного пака шли в таблице подряд и по порядку
+    номеров, а не вперемешку по объёму трафика.
+    """
+    match = _PACK_SUFFIX.match(code)
+    if not match:
+        return code, 0
+    return match.group("base"), int(match.group("number"))
+
+
 def short_rows(funnel: list) -> list[list[str]]:
-    """Ссылка и число подписок.
+    """Ссылка и число подписок, сгруппировано по пакам.
 
     Отбираем по переходам, а не по подпискам: ссылка с трафиком и нулём
     подписок — это не пустая строка, а сигнал, что связка не работает.
+
+    Порядок: паки по убыванию подписок, внутри пака — по номеру. Так строки
+    одного названия стоят рядом, а сильные паки видно сверху.
     """
+    live = [row for row in funnel if row.starts]
+
+    packs: dict[str, list] = {}
+    for row in live:
+        packs.setdefault(pack_key(row.code)[0], []).append(row)
+
+    ordered = sorted(
+        packs.items(),
+        key=lambda item: (-sum(r.converted for r in item[1]), item[0]),
+    )
     return [
-        [row.title or row.code, str(row.converted)] for row in funnel if row.starts
+        [row.title or row.code, str(row.converted)]
+        for _, rows in ordered
+        for row in sorted(rows, key=lambda r: pack_key(r.code)[1])
     ]
 
 
