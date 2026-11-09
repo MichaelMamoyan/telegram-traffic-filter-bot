@@ -221,10 +221,11 @@ def _funnel(*triples):  # type: ignore[no-untyped-def]
 
 
 def test_short_rows_keep_only_links_with_traffic() -> None:
+    """Ссылка без переходов не нужна, а с переходами и нулём подписок — нужна."""
     from app.services.rows import short_rows
 
     rows = short_rows(_funnel(("Kiril 1", 50, 20), ("Kiril 2", 0, 0), ("Kiril 3", 7, 1)))
-    assert rows == [["Kiril 1", "50", "20"], ["Kiril 3", "7", "1"]]
+    assert rows == [["Kiril 1", "20"], ["Kiril 3", "1"]]
 
 
 def test_short_rows_fall_back_to_code_without_title() -> None:
@@ -233,7 +234,7 @@ def test_short_rows_fall_back_to_code_without_title() -> None:
 
     row = FunnelRow(link_id=1, code="kiril_1", title="", buyer_name=None,
                     starts=3, passed=3, converted=1)
-    assert short_rows([row]) == [["kiril_1", "3", "1"]]
+    assert short_rows([row]) == [["kiril_1", "1"]]
 
 
 def test_short_tab_is_created_with_its_own_headers() -> None:
@@ -255,7 +256,14 @@ def test_short_sheet_is_rewritten_whole() -> None:
     spreadsheet = FakeSpreadsheet([])
     syncer = _syncer(spreadsheet)
     syncer._ensure_all_tabs_sync()
-    syncer._write_sync({}, [], [["Kiril 1", "50", "20"]])
+    syncer._write_sync({}, [], [["Kiril 1", "20"]])
 
     sheet = next(w for w in spreadsheet.worksheets() if w.title == TAB_SHORT)
-    assert sheet.updates[-1][0]["values"] == [SHORT_HEADERS, ["Kiril 1", "50", "20"]]
+    assert sheet.updates[-1][0]["values"] == [SHORT_HEADERS, ["Kiril 1", "20"]]
+
+
+def test_short_rows_keep_links_with_traffic_but_no_subscriptions() -> None:
+    """Связка льёт, а подписок нет — это и есть повод её отключить."""
+    from app.services.rows import short_rows
+
+    assert short_rows(_funnel(("Слитая", 300, 0))) == [["Слитая", "0"]]

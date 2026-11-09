@@ -33,7 +33,7 @@ USER_HEADERS = [
     "Дата подписки",
 ]
 
-SHORT_HEADERS = ["Ссылка", "Зашло", "Подписалось"]
+SHORT_HEADERS = ["Ссылка", "Подписалось"]
 
 SUMMARY_HEADERS = [
     "Ссылка",
@@ -87,11 +87,13 @@ def user_row(user: User, tz: str = "UTC") -> list[str]:
 
 
 def short_rows(funnel: list) -> list[list[str]]:
-    """Только ссылки с трафиком: ссылка, сколько зашло, сколько подписалось."""
+    """Ссылка и число подписок.
+
+    Отбираем по переходам, а не по подпискам: ссылка с трафиком и нулём
+    подписок — это не пустая строка, а сигнал, что связка не работает.
+    """
     return [
-        [row.title or row.code, str(row.starts), str(row.converted)]
-        for row in funnel
-        if row.starts
+        [row.title or row.code, str(row.converted)] for row in funnel if row.starts
     ]
 
 
