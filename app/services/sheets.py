@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings
 from app.db.repo import SheetStateRepo, StatsRepo, UserRepo
+from app.enums import Segment
 from app.services.rows import (
     SHORT_HEADERS,
     SUMMARY_HEADERS,
@@ -196,9 +197,12 @@ class SheetsSyncer:
             state_repo = SheetStateRepo(session)
             pending = await users_repo.pending_sheet_sync(self.settings.sheets_sync_batch)
             if not pending:
-                funnel = await StatsRepo(session).link_funnel()
+                stats = StatsRepo(session)
                 await asyncio.to_thread(
-                    self._write_sync, {}, summary_rows(funnel), short_rows(funnel)
+                    self._write_sync,
+                    {},
+                    summary_rows(await stats.link_funnel()),
+                    short_rows(await stats.link_funnel(segment=Segment.MALE_ADULT)),
                 )
                 return 0
 
@@ -218,9 +222,12 @@ class SheetsSyncer:
                 payload[tab].append((row, user_row(user, self.settings.tz_name)))
                 assignments.append((user.tg_id, tab, row))
 
-            funnel = await StatsRepo(session).link_funnel()
+            stats = StatsRepo(session)
             await asyncio.to_thread(
-                self._write_sync, payload, summary_rows(funnel), short_rows(funnel)
+                self._write_sync,
+                payload,
+                summary_rows(await stats.link_funnel()),
+                short_rows(await stats.link_funnel(segment=Segment.MALE_ADULT)),
             )
 
             for tg_id, tab, row in assignments:

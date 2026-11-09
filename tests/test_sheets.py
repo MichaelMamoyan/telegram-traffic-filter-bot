@@ -221,6 +221,13 @@ def _funnel(*triples):  # type: ignore[no-untyped-def]
     ]
 
 
+def test_short_headers_name_the_segment() -> None:
+    """Колонка должна говорить, кого считает — иначе цифру прочтут неверно."""
+    from app.services.rows import SHORT_HEADERS
+
+    assert SHORT_HEADERS == ["Ссылка", "Парни 18+"]
+
+
 def test_short_rows_include_links_without_traffic() -> None:
     """Пак раздаётся целиком, поэтому в листе должны быть все его ссылки."""
     from app.services.rows import short_rows

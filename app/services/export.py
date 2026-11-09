@@ -7,6 +7,7 @@ from io import BytesIO
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repo import StatsRepo, UserRepo
+from app.enums import Segment
 from app.services.rows import (
     SHORT_HEADERS,
     SUMMARY_HEADERS,
@@ -24,14 +25,17 @@ from app.services.rows import (
 async def build_xlsx(session: AsyncSession, tz: str = "UTC") -> tuple[bytes, str]:
     """Выгрузка базы в Excel той же структурой, что и в Google Sheets."""
     users = await UserRepo(session).list_for_export()
-    funnel = await StatsRepo(session).link_funnel()
+    stats = StatsRepo(session)
+    funnel = await stats.link_funnel()
+    # Узкий лист считает только основной оффер — как в Google Sheets.
+    short_funnel = await stats.link_funnel(segment=Segment.MALE_ADULT)
 
     by_tab: dict[str, list[list[str]]] = {tab: [] for tab in USER_TABS}
     for user in users:
         by_tab[tab_for(user)].append(user_row(user, tz))
 
     data = await asyncio.to_thread(
-        _render, by_tab, summary_rows(funnel), short_rows(funnel)
+        _render, by_tab, summary_rows(funnel), short_rows(short_funnel)
     )
     name = f"filter_bot_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return data, name

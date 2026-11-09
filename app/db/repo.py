@@ -549,11 +549,21 @@ class StatsRepo:
         )
 
     async def link_funnel(
-        self, since: dt.datetime | None = None, buyer_id: int | None = None
+        self,
+        since: dt.datetime | None = None,
+        buyer_id: int | None = None,
+        segment: Segment | None = None,
     ) -> list[FunnelRow]:
+        """Воронка по ссылкам. `segment` сужает подсчёт до одной аудитории.
+
+        Условие уходит в ON, а не в WHERE: ссылки без подходящих юзеров
+        должны оставаться в списке с нулями, иначе пак выглядит обрезанным.
+        """
         join_cond = [User.ref_link_id == RefLink.id]
         if since is not None:
             join_cond.append(User.started_at >= since)
+        if segment is not None:
+            join_cond.append(User.segment == segment.value)
         starts, passed, converted = self._funnel_columns()
         stmt = (
             select(

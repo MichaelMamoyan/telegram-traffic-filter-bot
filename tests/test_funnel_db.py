@@ -360,3 +360,47 @@ def test_sqlite_engine_ignores_pool_settings() -> None:
 
     engine = make_engine("sqlite+aiosqlite:///:memory:")
     assert engine is not None
+
+
+async def test_link_funnel_can_be_narrowed_to_one_segment(session) -> None:
+    """Узкий лист считает только основной оффер — парней 18+."""
+    link = await LinkRepo(session).create(title="mix")
+    channels = ChannelRepo(session)
+    adult = await channels.upsert(chat_id=-1, title="A", segments=[Segment.MALE_ADULT.value])
+    junior = await channels.upsert(
+        chat_id=-2, title="J", segments=[Segment.MALE_MINOR.value], allow_minors=True
+    )
+
+    await _walk_funnel(session, 1, link, adult, AgeStatus.ADULT, Gender.MALE, subscribe=True)
+    await _walk_funnel(session, 2, link, adult, AgeStatus.ADULT, Gender.MALE)
+    await _walk_funnel(session, 3, link, junior, AgeStatus.MINOR, Gender.MALE, subscribe=True)
+    await _walk_funnel(session, 4, link, adult, AgeStatus.ADULT, Gender.FEMALE, subscribe=True)
+    await session.commit()
+
+    stats = StatsRepo(session)
+    total = next(r for r in await stats.link_funnel() if r.link_id == link.id)
+    assert (total.starts, total.converted) == (4, 3)
+
+    male18 = next(
+        r for r in await stats.link_funnel(segment=Segment.MALE_ADULT) if r.link_id == link.id
+    )
+    assert (male18.starts, male18.converted) == (2, 1)
+
+
+async def test_segment_filter_keeps_links_without_that_segment(session) -> None:
+    """Ссылка без парней 18+ остаётся в списке с нулём, а не исчезает."""
+    links = LinkRepo(session)
+    with_males = await links.create(title="есть парни")
+    only_girls = await links.create(title="только девушки")
+    channel = await ChannelRepo(session).upsert(
+        chat_id=-1, title="A", segments=[Segment.MALE_ADULT.value]
+    )
+
+    await _walk_funnel(session, 1, with_males, channel, subscribe=True)
+    await _walk_funnel(session, 2, only_girls, channel, AgeStatus.ADULT, Gender.FEMALE, subscribe=True)
+    await session.commit()
+
+    rows = {r.link_id: r for r in await StatsRepo(session).link_funnel(segment=Segment.MALE_ADULT)}
+    assert rows[with_males.id].converted == 1
+    assert rows[only_girls.id].converted == 0
+    assert only_girls.id in rows, "ссылка не должна пропадать из отчёта"
