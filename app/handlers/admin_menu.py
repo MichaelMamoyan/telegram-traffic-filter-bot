@@ -129,6 +129,9 @@ async def _render_stats(
         organic = await stats.organic_funnel(since)
         if organic.starts:
             rows = [*rows, organic]
+        archived = await stats.archived_funnel(since)
+        if archived.starts:
+            rows = [*rows, archived]
         text = texts.stats_report("Статистика по ссылкам", period, totals, rows)
 
     return text, stats_kb(view if view in ("links", "buyers", "full") else "links", period)

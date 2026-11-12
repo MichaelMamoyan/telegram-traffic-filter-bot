@@ -36,9 +36,10 @@ from app.keyboards.admin import (
     channels_kb,
     export_kb,
     link_card_kb,
-    links_kb,
     main_menu_kb,
     nobuttons_kb,
+    pack_card_kb,
+    packs_kb,
     stats_kb,
 )
 from app.keyboards.callbacks import (
@@ -50,6 +51,7 @@ from app.keyboards.callbacks import (
     GenderCB,
     LinkCB,
     MenuCB,
+    PackCB,
     StatsCB,
 )
 from app.keyboards.funnel import age_kb, gender_kb
@@ -60,7 +62,8 @@ from app.services.sheets import SheetsSyncer
 ADMIN_ID = 1
 
 CALLBACK_CLASSES = (
-    AgeCB, GenderCB, MenuCB, StatsCB, LinkCB, BuyerCB, ChannelCB, BroadcastCB, ExportCB,
+    AgeCB, GenderCB, MenuCB, StatsCB, LinkCB, BuyerCB, ChannelCB, BroadcastCB,
+    ExportCB, PackCB,
 )
 
 
@@ -73,6 +76,17 @@ def _callback_class(data: str):  # type: ignore[no-untyped-def]
 
 
 # --------------------------------------------------------------- round-trip
+
+
+def _nav_packs():  # type: ignore[no-untyped-def]
+    from app.db.models import RefLink
+    from app.utils.packs import group_packs
+
+    links = [
+        RefLink(id=i, code=f"mm_{i}", title=f"ММ {i}", is_active=True, is_archived=False)
+        for i in range(1, 21)
+    ]
+    return group_packs(links, {i: (i, i % 2) for i in range(1, 21)})
 
 
 def _every_keyboard() -> list[tuple[str, InlineKeyboardMarkup]]:
@@ -101,8 +115,8 @@ def _every_keyboard() -> list[tuple[str, InlineKeyboardMarkup]]:
         ("stats_links", stats_kb("links", "today")),
         ("stats_buyers", stats_kb("buyers", "7d")),
         ("stats_full", stats_kb("full", "all")),
-        ("links_list", links_kb([link], 0)),
-        ("links_paged", links_kb([link] * 20, 1)),
+        ("packs_list", packs_kb(_nav_packs(), 0)),
+        ("pack_card", pack_card_kb(_nav_packs()[0])),
         ("link_card", link_card_kb(link, "https://t.me/test_bot?start=vasya_tiktok_01")),
         ("buyers", buyers_kb([buyer])),
         ("buyer_pick", buyer_pick_kb([buyer])),

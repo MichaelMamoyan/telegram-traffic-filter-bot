@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Select, and_, case, func, or_, select, update
+from sqlalchemy import Select, and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.base import utcnow
@@ -21,6 +21,7 @@ from app.db.models import (
     User,
 )
 from app.enums import AgeStatus, BroadcastStatus, EventType, Gender, OfferStatus, Segment
+from app.utils.packs import PackSummary, group_packs, pack_key
 
 _CODE_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
@@ -91,10 +92,19 @@ class LinkRepo:
     async def get_by_code(self, code: str) -> RefLink | None:
         return await self.session.scalar(select(RefLink).where(RefLink.code == code))
 
-    async def list_all(self, buyer_id: int | None = None) -> Sequence[RefLink]:
+    async def list_all(
+        self,
+        buyer_id: int | None = None,
+        include_archived: bool = False,
+        only_archived: bool = False,
+    ) -> Sequence[RefLink]:
         stmt = select(RefLink).order_by(RefLink.id)
         if buyer_id is not None:
             stmt = stmt.where(RefLink.buyer_id == buyer_id)
+        if only_archived:
+            stmt = stmt.where(RefLink.is_archived.is_(True))
+        elif not include_archived:
+            stmt = stmt.where(RefLink.is_archived.is_(False))
         return (await self.session.scalars(stmt)).all()
 
     async def create(
@@ -157,6 +167,97 @@ class LinkRepo:
             link.is_active = not link.is_active
             await self.session.flush()
         return link
+
+    # --- паки ---
+
+    async def counts_by_link(self) -> dict[int, tuple[int, int]]:
+        """{id ссылки: (переходы, подписки)} — одним запросом по всем ссылкам."""
+        stmt = (
+            select(
+                User.ref_link_id,
+                func.count(User.tg_id),
+                func.coalesce(func.sum(case((User.is_subscribed.is_(True), 1), else_=0)), 0),
+            )
+            .where(User.ref_link_id.is_not(None))
+            .group_by(User.ref_link_id)
+        )
+        return {row[0]: (row[1], row[2]) for row in (await self.session.execute(stmt)).all()}
+
+    async def list_packs(
+        self, include_archived: bool = False, only_archived: bool = False
+    ) -> list[PackSummary]:
+        links = await self.list_all(
+            include_archived=include_archived, only_archived=only_archived
+        )
+        return group_packs(list(links), await self.counts_by_link())
+
+    async def pack_links(self, base: str) -> list[RefLink]:
+        r"""Все ссылки пака, включая архивные.
+
+        LIKE по префиксу не точен: `kiril\_%` зацепил бы и `kiril_tiktok_1`.
+        Поэтому кандидатов берём широко, а отсеиваем по разбору кода.
+        """
+        pattern = base.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        stmt = select(RefLink).where(
+            or_(RefLink.code == base, RefLink.code.like(f"{pattern}\\_%", escape="\\"))
+        )
+        candidates = (await self.session.scalars(stmt)).all()
+        links = [link for link in candidates if pack_key(link.code)[0] == base]
+        links.sort(key=lambda link: (pack_key(link.code)[1], link.id))
+        return links
+
+    async def unused_links(self) -> list[RefLink]:
+        """Ссылки, по которым не было ни одного перехода — терять там нечего."""
+        used = select(User.ref_link_id).where(User.ref_link_id.is_not(None))
+        stmt = select(RefLink).where(RefLink.id.not_in(used)).order_by(RefLink.id)
+        return list((await self.session.scalars(stmt)).all())
+
+    # --- архив и удаление ---
+
+    async def set_archived(self, links: Sequence[RefLink], archived: bool) -> int:
+        stamp = utcnow() if archived else None
+        for link in links:
+            link.is_archived = archived
+            link.archived_at = stamp
+        await self.session.flush()
+        return len(links)
+
+    async def impact(self, links: Sequence[RefLink]) -> tuple[int, int, int]:
+        """Что потеряется при удалении: (ссылок, переходов, подписок).
+
+        Юзеры не удаляются — у них обнулится ссылка, и они уйдут в «органику».
+        Теряется именно привязка к байеру, то есть доказательство его работы.
+        """
+        ids = [link.id for link in links]
+        if not ids:
+            return 0, 0, 0
+        stmt = select(
+            func.count(User.tg_id),
+            func.coalesce(func.sum(case((User.is_subscribed.is_(True), 1), else_=0)), 0),
+        ).where(User.ref_link_id.in_(ids))
+        starts, converted = (await self.session.execute(stmt)).one()
+        return len(ids), starts, converted
+
+    async def delete_links(self, links: Sequence[RefLink]) -> int:
+        """Безвозвратно удаляет ссылки. Записи юзеров остаются — у них лишь
+        обнуляется привязка, и в отчётах они уходят в «органику».
+
+        Привязки гасим явно, а не полагаемся на FK ON DELETE SET NULL:
+        SQLite его без pragma не применяет, и поведение разъехалось бы
+        между тестами и Postgres.
+        """
+        ids = [link.id for link in links]
+        if not ids:
+            return 0
+        await self.session.execute(
+            update(User).where(User.ref_link_id.in_(ids)).values(ref_link_id=None)
+        )
+        await self.session.execute(
+            update(Offer).where(Offer.ref_link_id.in_(ids)).values(ref_link_id=None)
+        )
+        result = await self.session.execute(delete(RefLink).where(RefLink.id.in_(ids)))
+        await self.session.flush()
+        return result.rowcount or 0
 
 
 # --------------------------------------------------------------------------- channels
@@ -553,11 +654,16 @@ class StatsRepo:
         since: dt.datetime | None = None,
         buyer_id: int | None = None,
         segment: Segment | None = None,
+        include_archived: bool = False,
     ) -> list[FunnelRow]:
         """Воронка по ссылкам. `segment` сужает подсчёт до одной аудитории.
 
         Условие уходит в ON, а не в WHERE: ссылки без подходящих юзеров
         должны оставаться в списке с нулями, иначе пак выглядит обрезанным.
+
+        Архивные ссылки по умолчанию не показываются — пак закрыт после
+        расчёта, в текущем отчёте ему не место. Их трафик идёт отдельной
+        строкой через archived_funnel, чтобы итоги сходились.
         """
         join_cond = [User.ref_link_id == RefLink.id]
         if since is not None:
@@ -584,6 +690,8 @@ class StatsRepo:
         )
         if buyer_id is not None:
             stmt = stmt.where(RefLink.buyer_id == buyer_id)
+        if not include_archived:
+            stmt = stmt.where(RefLink.is_archived.is_(False))
         rows = (await self.session.execute(stmt)).all()
         return [
             FunnelRow(
@@ -598,6 +706,28 @@ class StatsRepo:
             )
             for row in rows
         ]
+
+    async def archived_funnel(self, since: dt.datetime | None = None) -> FunnelRow:
+        """Трафик закрытых (архивных) ссылок — одной строкой, чтобы сумма сходилась."""
+        starts, passed, converted = self._funnel_columns()
+        stmt = (
+            select(starts, passed, converted)
+            .select_from(User)
+            .join(RefLink, RefLink.id == User.ref_link_id)
+            .where(RefLink.is_archived.is_(True))
+        )
+        if since is not None:
+            stmt = stmt.where(User.started_at >= since)
+        row = (await self.session.execute(stmt)).one()
+        return FunnelRow(
+            link_id=None,
+            code="archived",
+            title="В архиве (закрытые паки)",
+            buyer_name=None,
+            starts=row[0],
+            passed=row[1],
+            converted=row[2],
+        )
 
     async def organic_funnel(self, since: dt.datetime | None = None) -> FunnelRow:
         """Трафик без реф-ссылки: по имени бота, из поиска, по пересылке.
@@ -627,7 +757,12 @@ class StatsRepo:
             select(starts, passed, converted)
             .select_from(User)
             .outerjoin(RefLink, RefLink.id == User.ref_link_id)
-            .where(or_(User.ref_link_id.is_(None), RefLink.buyer_id.is_(None)))
+            .where(
+                or_(
+                    User.ref_link_id.is_(None),
+                    and_(RefLink.buyer_id.is_(None), RefLink.is_archived.is_(False)),
+                )
+            )
         )
         if since is not None:
             stmt = stmt.where(User.started_at >= since)
@@ -650,7 +785,9 @@ class StatsRepo:
         stmt = (
             select(Buyer.id, Buyer.name, starts, passed, converted)
             .select_from(Buyer)
-            .outerjoin(RefLink, RefLink.buyer_id == Buyer.id)
+            .outerjoin(
+                RefLink, and_(RefLink.buyer_id == Buyer.id, RefLink.is_archived.is_(False))
+            )
             .outerjoin(User, and_(*join_cond))
             .group_by(Buyer.id, Buyer.name)
             .order_by(func.count(User.tg_id).desc())

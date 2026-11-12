@@ -49,6 +49,13 @@ class RefLink(Base, TimestampMixin):
         ForeignKey("buyers.id", ondelete="SET NULL"), index=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Архив — «закрыть пак после расчёта с байером»: ссылки перестают работать
+    # и уходят из списков и отчётов, но история переходов и подписок остаётся
+    # на случай спора по выплате. Удаление, в отличие от архива, историю стирает.
+    is_archived: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
+    archived_at: Mapped[dt.datetime | None] = mapped_column(TimestampTZ)
 
     buyer: Mapped[Buyer | None] = relationship(back_populates="links", lazy="selectin")
 

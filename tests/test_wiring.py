@@ -18,9 +18,9 @@ from app.keyboards.admin import (
     channels_kb,
     export_kb,
     link_card_kb,
-    links_kb,
     main_menu_kb,
     nobuttons_kb,
+    packs_kb,
     stats_kb,
 )
 from app.keyboards.funnel import age_kb, gender_kb, offer_kb
@@ -32,6 +32,16 @@ def test_routers_register_and_request_needed_updates() -> None:
     used = set(dp.resolve_used_update_types())
     # Без этих типов апдейтов учёт подписок и воронка не работают.
     assert {"message", "callback_query", "chat_join_request", "chat_member", "my_chat_member"} <= used
+
+
+def _sample_packs():  # type: ignore[no-untyped-def]
+    from app.utils.packs import group_packs
+
+    links = [
+        RefLink(id=i, code=f"mm_{i}", title=f"ММ {i}", is_active=True, is_archived=False)
+        for i in range(1, 21)
+    ]
+    return group_packs(links, {i: (i, i % 3) for i in range(1, 21)})
 
 
 def _all_keyboards() -> list[InlineKeyboardMarkup]:
@@ -62,7 +72,7 @@ def _all_keyboards() -> list[InlineKeyboardMarkup]:
         main_menu_kb(),
         stats_kb("links", "today"),
         stats_kb("full", "all"),
-        links_kb([link] * 20, page=1),
+        packs_kb(_sample_packs(), page=0),
         link_card_kb(link, "https://t.me/test_bot?start=vasya_tiktok_01"),
         buyers_kb([buyer]),
         buyer_pick_kb([buyer]),

@@ -132,7 +132,13 @@ def stats_report(
     return "\n".join(parts)
 
 
-def link_card(code: str, title: str, bot_username: str, row: FunnelRow | None = None) -> str:
+def link_card(
+    code: str,
+    title: str,
+    bot_username: str,
+    row: FunnelRow | None = None,
+    archived: bool = False,
+) -> str:
     url = f"https://t.me/{bot_username}?start={code}"
     text = [f"🔗 <b>{esc(title)}</b>", f"<code>{esc(url)}</code>"]
     if row:
@@ -141,7 +147,78 @@ def link_card(code: str, title: str, bot_username: str, row: FunnelRow | None = 
             f"Start: <b>{row.starts}</b> → фильтр: <b>{row.passed}</b> ({row.pass_rate:.0f}%) "
             f"→ подписка: <b>{row.converted}</b> ({row.conv_rate:.0f}%)",
         ]
+    if archived:
+        text += ["", "🗄 Ссылка в архиве — не работает и не учитывается в отчётах."]
     return "\n".join(text)
+
+
+def packs_overview(total_links: int, total_packs: int, archived_shown: bool) -> str:
+    parts = [
+        "🔗 <b>Реферальные ссылки</b>",
+        f"Паков: <b>{total_packs}</b> · ссылок: <b>{total_links}</b>",
+        "",
+        "Нажмите на пак — ссылки, статистика и действия.",
+    ]
+    if archived_shown:
+        parts.append("Показаны закрытые паки (архив).")
+    if total_packs == 0:
+        parts.append("\nПока ничего нет — создайте ссылку или пак.")
+    return "\n".join(parts)
+
+
+def pack_button(pack, age_days: int) -> str:  # type: ignore[no-untyped-def]
+    icon = "🗄" if pack.is_archived else "📦"
+    kind = "" if pack.is_single else f" · {pack.size}шт"
+    age = f" · {age_days}д" if age_days else ""
+    return f"{icon} {pack.title}{kind} · ✅{pack.converted}{age}"
+
+
+def pack_card(pack, age_days: int, bot_username: str) -> str:  # type: ignore[no-untyped-def]
+    lines = [
+        f"{'🗄 ' if pack.is_archived else '📦 '}<b>{esc(pack.title)}</b>",
+        "",
+        f"Ссылок: <b>{pack.size}</b>",
+        f"Зашло: <b>{pack.starts}</b> · подписалось: <b>{pack.converted}</b>",
+    ]
+    if age_days:
+        lines.append(f"Создан: <b>{age_days}</b> дн. назад")
+    if pack.is_archived:
+        lines.append("\n🗄 Пак в архиве — ссылки не работают, в отчётах не учитываются.")
+    return "\n".join(lines)
+
+
+CONFIRM_DELETE_LINK = (
+    "🗑 <b>Удалить ссылку?</b>\n\n"
+    "<code>{code}</code>\n\n"
+    "По ней: зашло <b>{starts}</b>, подписалось <b>{converted}</b>.\n"
+    "Удаление безвозвратно — эта статистика пропадёт из отчётов байера.\n\n"
+    "Если нужно просто закрыть ссылку — используйте «В архив», история сохранится."
+)
+
+CONFIRM_DELETE_PACK = (
+    "🗑 <b>Удалить пак «{title}»?</b>\n\n"
+    "Ссылок: <b>{links}</b>, по ним зашло <b>{starts}</b>, "
+    "подписалось <b>{converted}</b>.\n"
+    "Удаление безвозвратно — вся статистика пака пропадёт.\n\n"
+    "Чтобы закрыть пак после расчёта, но сохранить историю, — «В архив»."
+)
+
+CONFIRM_CLEAN = (
+    "🧹 <b>Удалить неиспользованные ссылки?</b>\n\n"
+    "Ссылок без единого перехода: <b>{count}</b>.\n"
+    "Терять нечего — статистики по ним нет. Удалить безвозвратно?"
+)
+
+CONFIRM_DELETE_ALL = (
+    "⚠️ <b>Удалить ВСЕ ссылки?</b>\n\n"
+    "Всего ссылок: <b>{links}</b>, по ним зашло <b>{starts}</b>, "
+    "подписалось <b>{converted}</b>.\n\n"
+    "Это сотрёт все реф-ссылки и их статистику безвозвратно.\n"
+    "Трафик, который они привели, уйдёт в «органику».\n\n"
+    "Точно удалить всё?"
+)
+
+PACK_RESEND_HEADER = "📋 Ссылки пака <b>{title}</b> — выдайте заливщику заново:"
 
 
 CHANNEL_RIGHTS_OK = "✅ бот админ, может выдавать инвайты"

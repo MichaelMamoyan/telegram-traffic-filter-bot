@@ -21,9 +21,18 @@ class StatsCB(CallbackData, prefix="stats"):
 
 
 class LinkCB(CallbackData, prefix="link"):
-    action: str  # open | toggle | new | pack | list
+    action: str  # open | toggle | new | pack | list | arch | askdel | del
     link_id: int = 0
     page: int = 0
+
+
+class PackCB(CallbackData, prefix="pk"):
+    # list | open | arch | unarch | askdel | del | resend | clean | askclean
+    # | delall | askdelall | archview
+    action: str
+    pid: str | None = None   # короткий id пака (pack_id), пусто для глобальных действий
+    page: int = 0
+    arch: bool = False       # показывать архив в списке паков
 
 
 class BuyerCB(CallbackData, prefix="buyer"):

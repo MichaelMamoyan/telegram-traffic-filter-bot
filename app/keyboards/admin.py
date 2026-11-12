@@ -14,8 +14,10 @@ from app.keyboards.callbacks import (
     ExportCB,
     LinkCB,
     MenuCB,
+    PackCB,
     StatsCB,
 )
+from app.utils.packs import PackSummary, pack_key
 from app.utils.periods import PERIODS
 
 PAGE_SIZE = 8
@@ -99,12 +101,48 @@ def stats_kb(view: str, period: str) -> InlineKeyboardMarkup:
     )
 
 
-def links_kb(links: Sequence[RefLink], page: int = 0) -> InlineKeyboardMarkup:
-    chunk = links[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+def packs_kb(
+    packs: Sequence[PackSummary], page: int = 0, arch: bool = False
+) -> InlineKeyboardMarkup:
+    import datetime as dt
+
+    from app import texts
+
+    now = dt.datetime.now(dt.UTC)
+    chunk = packs[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+    rows: list[Row] = [
+        [_btn(texts.pack_button(pack, pack.age_days(now)), PackCB(action="open", pid=pack.id))]
+        for pack in chunk
+    ]
+
+    nav: Row = []
+    if page > 0:
+        nav.append(_btn("⬅️ Назад", PackCB(action="list", page=page - 1, arch=arch)))
+    if (page + 1) * PAGE_SIZE < len(packs):
+        nav.append(_btn("Вперёд ➡️", PackCB(action="list", page=page + 1, arch=arch)))
+
+    return _kb(
+        *rows,
+        nav,
+        [_btn("➕ Ссылка", LinkCB(action="new")), _btn("📦 Пак", LinkCB(action="pack"))],
+        [_btn("🧹 Удалить неиспользованные", PackCB(action="askclean"))],
+        [
+            _btn(
+                "📂 Скрыть архив" if arch else "🗄 Показать архив",
+                PackCB(action="list", arch=not arch),
+            )
+        ],
+        [_btn("🗑 Удалить все ссылки", PackCB(action="askdelall"))],
+        _menu_row(),
+    )
+
+
+def pack_card_kb(pack: PackSummary, page: int = 0) -> InlineKeyboardMarkup:
+    chunk = pack.links[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
     rows: list[Row] = [
         [
             _btn(
-                f"{'' if link.is_active else '⏸ '}{link.title}",
+                f"{'🗄 ' if link.is_archived else ''}{link.title}",
                 LinkCB(action="open", link_id=link.id),
             )
         ]
@@ -112,30 +150,52 @@ def links_kb(links: Sequence[RefLink], page: int = 0) -> InlineKeyboardMarkup:
     ]
     nav: Row = []
     if page > 0:
-        nav.append(_btn("⬅️ Назад", LinkCB(action="list", page=page - 1)))
-    if (page + 1) * PAGE_SIZE < len(links):
-        nav.append(_btn("Вперёд ➡️", LinkCB(action="list", page=page + 1)))
+        nav.append(_btn("⬅️", PackCB(action="open", pid=pack.id, page=page - 1)))
+    if (page + 1) * PAGE_SIZE < pack.size:
+        nav.append(_btn("➡️", PackCB(action="open", pid=pack.id, page=page + 1)))
+
+    actions: list[Row] = []
+    if pack.is_archived:
+        actions.append([_btn("📤 Вернуть из архива", PackCB(action="unarch", pid=pack.id))])
+    else:
+        actions.append([_btn("🗄 В архив (закрыть пак)", PackCB(action="arch", pid=pack.id))])
+        actions.append([_btn("📋 Выдать ссылки заново", PackCB(action="resend", pid=pack.id))])
+    actions.append([_btn("🗑 Удалить пак", PackCB(action="askdel", pid=pack.id))])
+
     return _kb(
         *rows,
         nav,
-        [_btn("➕ Новая ссылка", LinkCB(action="new"))],
-        [_btn("📦 Создать пак ссылок", LinkCB(action="pack"))],
-        _menu_row(),
+        *actions,
+        [_btn("⬅️ К списку паков", PackCB(action="list"))],
+    )
+
+
+def confirm_kb(yes_cb, no_cb, yes_text: str = "🗑 Да, удалить") -> InlineKeyboardMarkup:  # type: ignore[no-untyped-def]
+    return _kb(
+        [_btn(yes_text, yes_cb)],
+        [_btn("✖️ Отмена", no_cb)],
     )
 
 
 def link_card_kb(link: RefLink, url: str) -> InlineKeyboardMarkup:
-    return _kb(
-        [_copy_btn("📋 Скопировать ссылку", url)],
-        [
-            _btn(
-                "⏸ Выключить ссылку" if link.is_active else "▶️ Включить ссылку",
-                LinkCB(action="toggle", link_id=link.id),
-            )
-        ],
-        [_btn("⬅️ К списку ссылок", LinkCB(action="list"))],
-        _menu_row(),
-    )
+    base, _ = pack_key(link.code)
+    rows: list[Row] = [[_copy_btn("📋 Скопировать ссылку", url)]]
+    if link.is_archived:
+        rows.append([_btn("📤 Вернуть из архива", LinkCB(action="arch", link_id=link.id))])
+    else:
+        rows.append(
+            [
+                _btn(
+                    "⏸ Выключить" if link.is_active else "▶️ Включить",
+                    LinkCB(action="toggle", link_id=link.id),
+                ),
+                _btn("🗄 В архив", LinkCB(action="arch", link_id=link.id)),
+            ]
+        )
+    rows.append([_btn("🗑 Удалить ссылку", LinkCB(action="askdel", link_id=link.id))])
+    rows.append([_btn("⬅️ К списку", LinkCB(action="list"))])
+    rows.append(_menu_row())
+    return _kb(*rows)
 
 
 def my_links_kb(links: Sequence[RefLink], bot_username: str) -> InlineKeyboardMarkup:

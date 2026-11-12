@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import re
 from zoneinfo import ZoneInfo
 
 from app.db.models import User
 from app.enums import Segment
+from app.utils.packs import pack_key, title_without_number
 
 # Листы выгрузки (п.4 ТЗ): сводка + отдельная база на каждую аудиторию.
 TAB_SUMMARY = "Сводка"
@@ -87,29 +87,10 @@ def user_row(user: User, tz: str = "UTC") -> list[str]:
     ]
 
 
-_PACK_SUFFIX = re.compile(r"^(?P<base>.+)_(?P<number>\d+)$")
-
-
-def pack_key(code: str) -> tuple[str, int]:
-    """Разбирает код `kiril_7` на пак и номер внутри пака.
-
-    Нужно, чтобы ссылки одного пака шли в таблице подряд и по порядку
-    номеров, а не вперемешку по объёму трафика.
-    """
-    match = _PACK_SUFFIX.match(code)
-    if not match:
-        return code, 0
-    return match.group("base"), int(match.group("number"))
-
-
 def pack_title(rows: list) -> str:
     """Имя пака для строки итога: берём из названия ссылки, отбрасывая номер."""
     first = rows[0]
-    title = first.title or first.code
-    head = title.rsplit(" ", 1)
-    if len(head) == 2 and head[1].isdigit():
-        return head[0]
-    return pack_key(first.code)[0]
+    return title_without_number(first.title or first.code, first.code)
 
 
 def short_rows(funnel: list) -> list[list[str]]:
