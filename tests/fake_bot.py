@@ -72,6 +72,10 @@ class FakeSession(BaseSession):
                 from_user=BOT_USER,
                 text=getattr(method, "text", None) or getattr(method, "caption", None),
             )
+        if name == "GetChat":
+            # title=None: refresh_title сочтёт «не изменилось» и не тронет базу.
+            # Тесты, которым нужна смена имени, подменяют GetChat сами.
+            return Chat(id=int(getattr(method, "chat_id", -100)), type="channel", title=None)
         if name == "GetChatMember":
             return ChatMemberAdministrator(
                 user=BOT_USER,

@@ -320,6 +320,10 @@ class ChannelRepo:
         channel.invite_link = link
         await self.session.flush()
 
+    async def set_title(self, channel: Channel, title: str) -> None:
+        channel.title = title
+        await self.session.flush()
+
 
 # --------------------------------------------------------------------------- users
 

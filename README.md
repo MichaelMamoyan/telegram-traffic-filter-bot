@@ -152,7 +152,7 @@ tests/                   224 тестов
 ## Тесты
 
 ```bash
-.venv/bin/python -m pytest -q      # 224 passed
+.venv/bin/python -m pytest -q      # 228 passed
 .venv/bin/python -m ruff check app tests migrations
 ```
 

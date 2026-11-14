@@ -17,6 +17,7 @@ from app.enums import AgeStatus, EventType, Gender, Segment, resolve_segment
 from app.filters import IsAdmin
 from app.keyboards.callbacks import AgeCB, GenderCB
 from app.keyboards.funnel import age_kb, gender_kb, offer_kb
+from app.services.channel_title import refresh_title
 from app.services.commands import apply_admin_commands
 from app.services.invites import InviteService
 from app.services.routing import pick_channel
@@ -192,6 +193,10 @@ async def _deliver_offer(
         )
         await _edit(callback, texts.NO_OFFER, None)
         return
+
+    # Название могли сменить в Telegram — подтягиваем свежее, чтобы в оффере
+    # не светилось старое имя канала.
+    await refresh_title(bot, channel, channels)
 
     invites = InviteService(bot, per_user_links=settings.per_user_invite_links)
     url = await invites.invite_for(channel, user, channels)
